@@ -7,6 +7,8 @@ AI‑powered parametric CAD assistant for FreeCAD + SolidWorks.
 - Auto‑create simple engineering drawings with TechDraw
 
 > Status: **Beta – Windows only**. Not for safety‑critical use.
+>
+> ![Text to Model screenshot](screenshots/text_to_model.png)
 
 ## Features
 
