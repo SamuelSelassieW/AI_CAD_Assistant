@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget,
     QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPlainTextEdit, QPushButton, QComboBox, QStatusBar,
-    QFileDialog, QMessageBox,
+    QFileDialog, QMessageBox, QDialog, 
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
@@ -384,6 +384,39 @@ class ModelToDrawingTab(QWidget):
         if self.drawing_path and self.drawing_path.exists():
             os.startfile(str(self.drawing_path))
 
+class AboutDialog(QDialog):
+    def __init__(self, main: QMainWindow):
+        super().__init__(main)
+        self.setWindowTitle("About – AI CAD Assistant")
+        self.setModal(True)
+
+        edition = "Pro" if main.is_pro else "Free"
+        credits = main.lic_state.get("pro_credits", 0)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"<b>AI CAD Assistant</b>"))
+        layout.addWidget(QLabel(f"Edition: {edition}"))
+        if not main.is_pro:
+            layout.addWidget(QLabel(f"Remaining trial advanced actions: {credits}"))
+        layout.addWidget(QLabel(" "))
+
+        layout.addWidget(QLabel(
+            "This tool is for prototyping and educational use.\n"
+            "Generated models and drawings must be reviewed and\n"
+            "validated by a qualified engineer before real‑world use."
+        ))
+
+        layout.addWidget(QLabel(
+            "See TERMS.md in the repository for full terms and disclaimer."
+        ))
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btns.addWidget(close_btn)
+        layout.addLayout(btns)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -409,9 +442,26 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         status.showMessage("Ready.")
 
+        # Add a simple About button on the status bar
+        about_btn = QPushButton("About")
+        about_btn.setFlat(True)
+        about_btn.clicked.connect(self.show_about_dialog)
+        status.addPermanentWidget(about_btn)
+
+    def show_about_dialog(self):
+        dlg = AboutDialog(self)
+        dlg.exec()
+
 
 def main():
     app = QApplication(sys.argv)
+
+    # Apply global stylesheet if present
+    style_path = BASE_DIR / "style.qss"
+    if style_path.exists():
+        with open(style_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
+
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

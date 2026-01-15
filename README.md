@@ -8,6 +8,8 @@ AI‑powered parametric CAD assistant for FreeCAD + SolidWorks.
 
 > Status: **Beta – Windows only**. Not for safety‑critical use.
 
+![Text to Model screenshot](screenshots/text_to_model.png)
+
 ## Features
 
 - **Text → Model**: describe a part, the app uses helpers like:
