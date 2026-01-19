@@ -6,10 +6,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget,
     QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPlainTextEdit, QPushButton, QComboBox, QStatusBar,
-    QFileDialog, QMessageBox, QDialog, 
+    QFileDialog, QMessageBox, QDialog, QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtProperty
+from PyQt6.QtGui import QPixmap, QColor, QPalette
 
 import FreeCAD, Part
 
@@ -43,6 +43,106 @@ MODELS_DIR = BASE_DIR / "generated_models"
 MODELS_DIR.mkdir(exist_ok=True)
 
 
+# ---------- Toast notification widget ----------
+
+class ToastWidget(QWidget):
+    """Small notification banner that appears at the top and auto-hides."""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self._opacity = 1.0
+
+        # Transparent widget; we draw only the inner frame
+        self.setAutoFillBackground(False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        outer_layout = QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Inner frame: the visible rectangle
+        self.frame = QFrame(self)
+        self.frame.setObjectName("toastFrame")
+        frame_layout = QHBoxLayout(self.frame)
+        frame_layout.setContentsMargins(16, 8, 16, 8)
+
+        self.label = QLabel("")
+        frame_layout.addWidget(self.label)
+
+        outer_layout.addWidget(self.frame)
+
+        self.set_success_style()
+
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.hide)
+
+        self.anim = QPropertyAnimation(self, b"opacity", self)
+        self.anim.setDuration(400)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        self.hide()
+
+    def set_success_style(self):
+        # Transparent background, green border, light-green text
+        self.frame.setStyleSheet("""
+            QFrame#toastFrame {
+                background-color: rgba(15, 23, 42, 0.3);  /* fully transparent */
+                border: 1px solid #22c55e;                 /* green border */
+                border-radius: 8px;
+            }
+        """)
+        self.label.setStyleSheet("color: #bbf7d0; font-weight: 600;")
+
+    def set_error_style(self):
+        # Transparent background, red border, light-red text
+        self.frame.setStyleSheet("""
+            QFrame#toastFrame {
+                background-color: rgba(15, 23, 42, 0.0);
+                border: 1px solid #f97373;                 /* red border */
+                border-radius: 8px;
+            }
+        """)
+        self.label.setStyleSheet("color: #fecaca; font-weight: 600;")
+
+    @pyqtProperty(float)
+    def opacity(self):
+        return self._opacity
+
+    @opacity.setter
+    def opacity(self, value: float):
+        self._opacity = value
+        self.setWindowOpacity(value)
+
+    def show_message(self, text: str, kind: str = "success", duration_ms: int = 3000):
+        if kind == "success":
+            self.set_success_style()
+        elif kind == "error":
+            self.set_error_style()
+
+        self.label.setText(text)
+
+        parent = self.parentWidget()
+        if parent:
+            pw = parent.width()
+            self.adjustSize()
+            w = self.width()
+            # 10 px from top, centered horizontally
+            self.move((pw - w) // 2, 10)
+
+        self.setWindowOpacity(1.0)
+        self.show()
+        self.raise_()
+
+        self.anim.stop()
+        self.anim.setStartValue(1.0)
+        self.anim.setEndValue(0.0)
+        self.timer.stop()
+        self.timer.start(duration_ms)
+        self.anim.start()
+
+
+# ---------- Tabs ----------
+
 class TextToModelTab(QWidget):
     def __init__(self, main_window: QMainWindow):
         super().__init__()
@@ -51,21 +151,33 @@ class TextToModelTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
 
-        # -------- Left: prompt & controls --------
-        left = QWidget()
+        # -------- Left card: prompt & controls --------
+        left = QFrame()
+        left.setObjectName("card")
         l_layout = QVBoxLayout(left)
-        l_layout.setContentsMargins(8, 8, 8, 8)
-        l_layout.setSpacing(6)
+        l_layout.setContentsMargins(16, 16, 16, 16)
+        l_layout.setSpacing(8)
 
-        l_layout.addWidget(QLabel("Describe your part:"))
+        title = QLabel("Describe Your Part")
+        title.setObjectName("cardTitle")
+        l_layout.addWidget(title)
+
+        subtitle = QLabel("Describe what you want to create in plain English.")
+        subtitle.setObjectName("secondaryText")
+        l_layout.addWidget(subtitle)
+
         self.prompt_edit = QPlainTextEdit()
         self.prompt_edit.setPlaceholderText(
-            "Example: an M8 hex head bolt 40mm long using fasteners"
+            "Example: an M8 hex head bolt 40mm long using fasteners..."
         )
-        self.prompt_edit.setMinimumHeight(120)
+        self.prompt_edit.setMinimumHeight(160)
         l_layout.addWidget(self.prompt_edit)
 
-        ex_layout = QHBoxLayout()
+        ex_row = QHBoxLayout()
+        ex_label = QLabel("Quick examples:")
+        ex_label.setObjectName("secondaryText")
+        ex_row.addWidget(ex_label)
+
         self.example_combo = QComboBox()
         self.example_combo.addItems([
             "an M8 hex head bolt 40mm long using fasteners",
@@ -75,40 +187,53 @@ class TextToModelTab(QWidget):
             "a cylinder of base radius 30mm and height 50mm with a central hole "
             "of radius 15mm and depth 30mm",
         ])
+        ex_row.addWidget(self.example_combo)
+
         ex_insert = QPushButton("Insert example")
         ex_insert.clicked.connect(self.insert_example)
-        ex_layout.addWidget(self.example_combo)
-        ex_layout.addWidget(ex_insert)
-        l_layout.addLayout(ex_layout)
+        ex_row.addWidget(ex_insert)
+        l_layout.addLayout(ex_row)
 
         self.generate_btn = QPushButton("Generate Model")
         self.generate_btn.clicked.connect(self.on_generate)
         l_layout.addWidget(self.generate_btn)
 
+        self.hint_label = QLabel("Generation may take 30–60 seconds.")
+        self.hint_label.setObjectName("secondaryText")
+        self.hint_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        l_layout.addWidget(self.hint_label)
+
         splitter.addWidget(left)
 
-        # -------- Right: code & result info --------
-        right = QWidget()
+        # -------- Right card: generated code & actions --------
+        right = QFrame()
+        right.setObjectName("card")
         r_layout = QVBoxLayout(right)
-        r_layout.setContentsMargins(8, 8, 8, 8)
-        r_layout.setSpacing(6)
+        r_layout.setContentsMargins(16, 16, 16, 16)
+        r_layout.setSpacing(8)
 
-        r_layout.addWidget(QLabel("Generated CAD code:"))
+        r_title = QLabel("Generated CAD Code")
+        r_title.setObjectName("cardTitle")
+        r_layout.addWidget(r_title)
+
         self.code_view = QPlainTextEdit()
         self.code_view.setReadOnly(True)
         self.code_view.setMinimumHeight(160)
+        self.code_view.setPlaceholderText("Generated code will appear here.")
         r_layout.addWidget(self.code_view)
 
-        self.model_label = QLabel("Model: (none)")
-        self.path_label = QLabel("Path: (none)")
+        self.model_label = QLabel("Model: not generated yet")
+        self.model_label.setObjectName("secondaryText")
+        self.path_label = QLabel("Saved to: —")
+        self.path_label.setObjectName("secondaryText")
         r_layout.addWidget(self.model_label)
         r_layout.addWidget(self.path_label)
 
         btn_row = QHBoxLayout()
+        btn_row.addStretch()
         self.open_btn = QPushButton("Open in FreeCAD")
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.open_in_freecad)
-        btn_row.addStretch()
         btn_row.addWidget(self.open_btn)
 
         self.export_btn = QPushButton("Export STEP")
@@ -136,6 +261,8 @@ class TextToModelTab(QWidget):
 
         self.generate_btn.setEnabled(False)
         self.main.statusBar().showMessage("Generating model...", 0)
+        if hasattr(self.main, "toast"):
+            self.main.toast.show_message("Generating model, please wait...", kind="success")
         QApplication.processEvents()
 
         try:
@@ -182,20 +309,27 @@ class TextToModelTab(QWidget):
             doc.saveAs(str(file_path))
 
             self.last_model_path = file_path
-            self.model_label.setText("Model created.")
-            self.path_label.setText(f"Path: {file_path}")
+            self.model_label.setText("Model: created")
+            self.path_label.setText(f"Saved to: {file_path}")
             self.open_btn.setEnabled(True)
             self.export_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
 
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Model generated successfully!", kind="success")
+
         except Exception as e:
             QMessageBox.critical(self, "Error generating model", str(e))
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Error generating model", kind="error")
         finally:
             self.generate_btn.setEnabled(True)
 
     def open_in_freecad(self):
         if self.last_model_path and self.last_model_path.exists():
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.last_model_path))
 
     def export_step(self):
@@ -214,6 +348,9 @@ class TextToModelTab(QWidget):
             return
 
         try:
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Exporting STEP, please wait...", kind="success")
+
             consume_pro_credit(state)
             step_path = self.last_model_path.with_suffix(".step")
             doc = FreeCAD.open(str(self.last_model_path))
@@ -221,8 +358,13 @@ class TextToModelTab(QWidget):
             FreeCAD.closeDocument(doc.Name)
             os.startfile(str(step_path))
             self.main.statusBar().showMessage(f"Exported STEP to: {step_path}", 5000)
+
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("STEP exported successfully!", kind="success")
         except Exception as e:
             QMessageBox.critical(self, "Export STEP failed", str(e))
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Error exporting STEP", kind="error")
 
 
 class ImageToModelTab(QWidget):
@@ -232,9 +374,19 @@ class ImageToModelTab(QWidget):
         self.image_path: Path | None = None
         self.model_path: Path | None = None
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        title = QLabel("Image → Model (Experimental)")
+        title.setObjectName("cardTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel("Upload a simple sketch or orthographic view. Results may be approximate.")
+        subtitle.setObjectName("secondaryText")
+        layout.addWidget(subtitle)
 
         btn_row = QHBoxLayout()
         self.load_btn = QPushButton("Load image / sketch…")
@@ -249,10 +401,13 @@ class ImageToModelTab(QWidget):
         self.preview = QLabel("No image loaded.")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumHeight(250)
+        self.preview.setObjectName("imagePreview")
         layout.addWidget(self.preview)
 
         self.info_label = QLabel("Model: (none)")
+        self.info_label.setObjectName("secondaryText")
         self.path_label = QLabel("Path: (none)")
+        self.path_label.setObjectName("secondaryText")
         layout.addWidget(self.info_label)
         layout.addWidget(self.path_label)
 
@@ -263,6 +418,9 @@ class ImageToModelTab(QWidget):
         open_row.addStretch()
         open_row.addWidget(self.open_btn)
         layout.addLayout(open_row)
+
+        outer = QVBoxLayout(self)
+        outer.addWidget(card)
 
     def load_image(self):
         fname, _ = QFileDialog.getOpenFileName(
@@ -288,6 +446,8 @@ class ImageToModelTab(QWidget):
             self.main.statusBar().showMessage("No valid image selected.", 4000)
             return
         self.main.statusBar().showMessage("Generating model from image...", 0)
+        if hasattr(self.main, "toast"):
+            self.main.toast.show_message("Generating from image, please wait...", kind="success")
         QApplication.processEvents()
         try:
             result = image_to_cad(str(self.image_path))
@@ -305,11 +465,17 @@ class ImageToModelTab(QWidget):
             self.path_label.setText(f"Path: {self.model_path}")
             self.open_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved model to: {self.model_path}", 5000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Image-based model created!", kind="success")
         except Exception as e:
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Error generating from image", kind="error")
 
     def open_model(self):
         if self.model_path and self.model_path.exists():
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.model_path))
 
 
@@ -319,30 +485,44 @@ class ModelToDrawingTab(QWidget):
         self.main = main_window
         self.drawing_path: Path | None = None
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        title = QLabel("Model → Drawing")
+        title.setObjectName("cardTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel("Select a generated model and create a basic engineering drawing.")
+        subtitle.setObjectName("secondaryText")
+        layout.addWidget(subtitle)
 
         layout.addWidget(QLabel("Select model from generated_models:"))
         self.model_combo = QComboBox()
         layout.addWidget(self.model_combo)
 
         btn_row = QHBoxLayout()
-        self.gen_btn = QPushButton("Generate Drawing")
-        self.gen_btn.clicked.connect(self.on_generate)
-        self.open_btn = QPushButton("Open Drawing")
-        self.open_btn.setEnabled(False)
-        self.open_btn.clicked.connect(self.open_drawing)
         self.refresh_btn = QPushButton("Refresh list")
         self.refresh_btn.clicked.connect(self.refresh_models)
         btn_row.addWidget(self.refresh_btn)
         btn_row.addStretch()
+        self.gen_btn = QPushButton("Generate Drawing")
+        self.gen_btn.clicked.connect(self.on_generate)
         btn_row.addWidget(self.gen_btn)
+        self.open_btn = QPushButton("Open Drawing")
+        self.open_btn.setEnabled(False)
+        self.open_btn.clicked.connect(self.open_drawing)
         btn_row.addWidget(self.open_btn)
         layout.addLayout(btn_row)
 
         self.path_label = QLabel("Drawing: (none)")
+        self.path_label.setObjectName("secondaryText")
         layout.addWidget(self.path_label)
+
+        outer = QVBoxLayout(self)
+        outer.addWidget(card)
 
         self.refresh_models()
 
@@ -369,6 +549,8 @@ class ModelToDrawingTab(QWidget):
             self.main.statusBar().showMessage("No valid model selected.", 4000)
             return
         self.main.statusBar().showMessage("Generating drawing...", 0)
+        if hasattr(self.main, "toast"):
+            self.main.toast.show_message("Generating drawing, please wait...", kind="success")
         QApplication.processEvents()
         try:
             consume_pro_credit(state)
@@ -377,12 +559,21 @@ class ModelToDrawingTab(QWidget):
             self.path_label.setText(f"Drawing: {out_path}")
             self.open_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved drawing to: {out_path}", 5000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Drawing generated successfully!", kind="success")
         except Exception as e:
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Error generating drawing", kind="error")
 
     def open_drawing(self):
         if self.drawing_path and self.drawing_path.exists():
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Opening drawing in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.drawing_path))
+
+
+# ---------- About dialog ----------
 
 class AboutDialog(QDialog):
     def __init__(self, main: QMainWindow):
@@ -394,7 +585,7 @@ class AboutDialog(QDialog):
         credits = main.lic_state.get("pro_credits", 0)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"<b>AI CAD Assistant</b>"))
+        layout.addWidget(QLabel("<b>AI CAD Assistant</b>"))
         layout.addWidget(QLabel(f"Edition: {edition}"))
         if not main.is_pro:
             layout.addWidget(QLabel(f"Remaining trial advanced actions: {credits}"))
@@ -405,7 +596,6 @@ class AboutDialog(QDialog):
             "Generated models and drawings must be reviewed and\n"
             "validated by a qualified engineer before real‑world use."
         ))
-
         layout.addWidget(QLabel(
             "See TERMS.md in the repository for full terms and disclaimer."
         ))
@@ -418,13 +608,14 @@ class AboutDialog(QDialog):
         layout.addLayout(btns)
 
 
+# ---------- Main window ----------
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AI CAD Assistant")
-        self.resize(1000, 600)
+        self.resize(1100, 650)
 
-        # Load license state
         self.lic_state = load_state()
         self.is_pro = is_pro(self.lic_state)
 
@@ -442,21 +633,25 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         status.showMessage("Ready.")
 
-        # Add a simple About button on the status bar
         about_btn = QPushButton("About")
         about_btn.setFlat(True)
         about_btn.clicked.connect(self.show_about_dialog)
         status.addPermanentWidget(about_btn)
+
+        # Toast notification overlay
+        self.toast = ToastWidget(self)
+        self.toast.hide()
 
     def show_about_dialog(self):
         dlg = AboutDialog(self)
         dlg.exec()
 
 
+# ---------- entry point ----------
+
 def main():
     app = QApplication(sys.argv)
 
-    # Apply global stylesheet if present
     style_path = BASE_DIR / "style.qss"
     if style_path.exists():
         with open(style_path, "r", encoding="utf-8") as f:

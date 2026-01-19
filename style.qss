@@ -1,6 +1,6 @@
-/* Main window & general background */
+/* Main window background */
 QMainWindow {
-    background-color: #f4f6f9;
+    background-color: #e5e7eb; /* light gray */
 }
 
 /* Tabs */
@@ -9,28 +9,51 @@ QTabWidget::pane {
 }
 
 QTabBar::tab {
-    background: #212733;
-    color: #bfc7d5;
+    background-color: #111827;
+    color: #9ca3af;
     padding: 6px 14px;
-    border-radius: 4px;
+    border-radius: 6px;
     margin-right: 4px;
+    font-weight: 500;
 }
 
 QTabBar::tab:selected {
-    background: #0d6efd;
+    background-color: #0d6efd;
     color: #ffffff;
 }
 
-/* Labels & text */
-QLabel {
-    color: #1f2933;
-    font-size: 11pt;
+/* Cards */
+QFrame#card {
+    background-color: #111827;      /* dark navy */
+    border-radius: 10px;
+    border: 1px solid #020617;
 }
 
+/* Card titles */
+QLabel#cardTitle {
+    color: #e5e7eb;
+    font-size: 12pt;
+    font-weight: 600;
+}
+
+/* Secondary text (hints, subtitles, status) */
+QLabel#secondaryText {
+    color: #9ca3af;
+    font-size: 9pt;
+}
+
+/* Generic labels */
+QLabel {
+    color: #111827;
+    font-size: 10.5pt;
+}
+
+/* Text areas */
 QPlainTextEdit, QTextEdit {
-    background: #ffffff;
-    border: 1px solid #d0d7e2;
-    border-radius: 4px;
+    background-color: #020617;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
     padding: 6px;
     font-family: Consolas, "Courier New", monospace;
     font-size: 10pt;
@@ -41,8 +64,8 @@ QPushButton {
     background-color: #0d6efd;
     color: #ffffff;
     border: none;
-    border-radius: 4px;
-    padding: 4px 12px;
+    border-radius: 6px;
+    padding: 6px 14px;
     font-weight: 500;
 }
 
@@ -51,15 +74,37 @@ QPushButton:hover {
 }
 
 QPushButton:disabled {
-    background-color: #c0c4cf;
-    color: #f5f5f5;
+    background-color: #4b5563;
+    color: #9ca3af;
+}
+
+QPushButton#secondary {
+    background-color: #1f2937;
+}
+
+/* Image preview */
+QLabel#imagePreview {
+    background-color: #020617;
+    color: #6b7280;
+    border-radius: 6px;
 }
 
 /* Status bar */
 QStatusBar {
-    background: #212733;
-    color: #dfe4f2;
+    background-color: #020617;
+    color: #e5e7eb;
+    padding-left: 8px;
 }
+
 QStatusBar QLabel {
-    color: #dfe4f2;
+    color: #e5e7eb;
+}
+
+/* ComboBox */
+QComboBox {
+    background-color: #020617;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    padding: 4px 8px;
 }
