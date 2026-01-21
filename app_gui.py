@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, webbrowser
 from pathlib import Path
 from license_utils import load_state, is_pro, can_use_pro_feature, consume_pro_credit
 
@@ -11,7 +11,16 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtProperty
 from PyQt6.QtGui import QPixmap, QColor, QPalette
 
-import FreeCAD, Part
+# Try to import FreeCAD; if not available, keep running but disable generation features
+try:
+    import FreeCAD, Part
+    FREECAD_AVAILABLE = True
+    FREECAD_ERROR = ""
+except Exception as e:
+    FreeCAD = None
+    Part = None
+    FREECAD_AVAILABLE = False
+    FREECAD_ERROR = str(e)
 
 from cad_code_ai_local import generate_cad_code
 from cad_primitives import (
@@ -198,7 +207,15 @@ class TextToModelTab(QWidget):
         self.generate_btn.clicked.connect(self.on_generate)
         l_layout.addWidget(self.generate_btn)
 
-        self.hint_label = QLabel("Generation may take 30–60 seconds.")
+        if not self.main.freecad_available:
+            self.generate_btn.setEnabled(False)
+
+        if self.main.freecad_available:
+            hint_text = "Generation may take 30–60 seconds."
+        else:
+            hint_text = "FreeCAD not found. Install FreeCAD to enable model generation."
+
+        self.hint_label = QLabel(hint_text)
         self.hint_label.setObjectName("secondaryText")
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         l_layout.addWidget(self.hint_label)
@@ -254,6 +271,15 @@ class TextToModelTab(QWidget):
         self.prompt_edit.setPlainText(self.example_combo.currentText())
 
     def on_generate(self):
+        if not self.main.freecad_available:
+            QMessageBox.warning(
+                self,
+                "FreeCAD not available",
+                "FreeCAD is not installed or its Python libraries could not be imported.\n"
+                "Please install FreeCAD and restart the AI CAD Assistant.",
+            )
+            return
+
         desc = self.prompt_edit.toPlainText().strip()
         if not desc:
             self.main.statusBar().showMessage("Please enter a description.", 4000)
@@ -333,6 +359,14 @@ class TextToModelTab(QWidget):
             os.startfile(str(self.last_model_path))
 
     def export_step(self):
+        if not self.main.freecad_available:
+            QMessageBox.warning(
+                self,
+                "FreeCAD not available",
+                "STEP export requires FreeCAD. Install FreeCAD and restart the app.",
+            )
+            return
+
         state = self.main.lic_state
         if not can_use_pro_feature(state):
             QMessageBox.information(
@@ -394,6 +428,8 @@ class ImageToModelTab(QWidget):
         self.gen_btn = QPushButton("Detect & Generate Model")
         self.gen_btn.setEnabled(False)
         self.gen_btn.clicked.connect(self.on_generate)
+        if not self.main.freecad_available:
+            self.gen_btn.setEnabled(False)
         btn_row.addWidget(self.load_btn)
         btn_row.addWidget(self.gen_btn)
         layout.addLayout(btn_row)
@@ -438,10 +474,20 @@ class ImageToModelTab(QWidget):
             ))
         else:
             self.preview.setText(f"Loaded: {fname}")
-        self.gen_btn.setEnabled(True)
+        if self.main.freecad_available:
+            self.gen_btn.setEnabled(True)
         self.main.statusBar().showMessage(f"Loaded image: {fname}", 4000)
 
     def on_generate(self):
+        if not self.main.freecad_available:
+            QMessageBox.warning(
+                self,
+                "FreeCAD not available",
+                "Generating a model from an image requires FreeCAD.\n"
+                "Please install FreeCAD and restart the AI CAD Assistant.",
+            )
+            return
+
         if not self.image_path or not self.image_path.exists():
             self.main.statusBar().showMessage("No valid image selected.", 4000)
             return
@@ -510,6 +556,8 @@ class ModelToDrawingTab(QWidget):
         btn_row.addStretch()
         self.gen_btn = QPushButton("Generate Drawing")
         self.gen_btn.clicked.connect(self.on_generate)
+        if not self.main.freecad_available:
+            self.gen_btn.setEnabled(False)
         btn_row.addWidget(self.gen_btn)
         self.open_btn = QPushButton("Open Drawing")
         self.open_btn.setEnabled(False)
@@ -535,6 +583,15 @@ class ModelToDrawingTab(QWidget):
             self.model_combo.addItem("(no models)", None)
 
     def on_generate(self):
+        if not self.main.freecad_available:
+            QMessageBox.warning(
+                self,
+                "FreeCAD not available",
+                "Drawing generation requires FreeCAD and its TechDraw workbench.\n"
+                "Please install FreeCAD and restart the AI CAD Assistant.",
+            )
+            return
+
         state = self.main.lic_state
         if not can_use_pro_feature(state):
             QMessageBox.information(
@@ -619,6 +676,10 @@ class MainWindow(QMainWindow):
         self.lic_state = load_state()
         self.is_pro = is_pro(self.lic_state)
 
+        # Environment: is FreeCAD available?
+        self.freecad_available = FREECAD_AVAILABLE
+        self.freecad_error = FREECAD_ERROR
+
         tabs = QTabWidget()
         self.text_tab = TextToModelTab(self)
         self.image_tab = ImageToModelTab(self)
@@ -633,18 +694,46 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         status.showMessage("Ready.")
 
+        if not self.freecad_available:
+            status.showMessage(
+                "FreeCAD not found. Model and drawing generation are disabled until you install it.",
+                10000,
+            )
+
         about_btn = QPushButton("About")
         about_btn.setFlat(True)
         about_btn.clicked.connect(self.show_about_dialog)
         status.addPermanentWidget(about_btn)
 
+        download_btn = QPushButton("Download FreeCAD")
+        download_btn.setFlat(True)
+        download_btn.clicked.connect(self.open_freecad_download)
+        status.addPermanentWidget(download_btn)
+
         # Toast notification overlay
         self.toast = ToastWidget(self)
         self.toast.hide()
 
+        if not self.freecad_available:
+            # Show a clear toast warning on startup
+            self.toast.show_message(
+                "FreeCAD is not installed or could not be imported. "
+                "Install FreeCAD, then restart the AI CAD Assistant.",
+                kind="error",
+                duration_ms=8000,
+            )
+
     def show_about_dialog(self):
         dlg = AboutDialog(self)
         dlg.exec()
+
+    def open_freecad_download(self):
+        url = "https://www.freecad.org/downloads.php"
+        # Show toast message
+        if hasattr(self, "toast"):
+            self.toast.show_message("Opening FreeCAD download page...", kind="success")
+        # Open default browser
+        webbrowser.open(url)
 
 
 # ---------- entry point ----------
