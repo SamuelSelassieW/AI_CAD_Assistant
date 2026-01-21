@@ -1,5 +1,29 @@
-import sys, os, webbrowser
+import sys, os, webbrowser, logging
 from pathlib import Path
+
+# ---------- Paths & logging setup ----------
+
+BASE_DIR = Path(__file__).parent
+MODELS_DIR = BASE_DIR / "generated_models"
+MODELS_DIR.mkdir(exist_ok=True)
+
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOG_FILE = LOGS_DIR / "app.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger("ai_cad_app")
+
+# ---------- Other imports ----------
+
 from license_utils import load_state, is_pro, can_use_pro_feature, consume_pro_credit
 
 from PyQt6.QtWidgets import (
@@ -16,11 +40,13 @@ try:
     import FreeCAD, Part
     FREECAD_AVAILABLE = True
     FREECAD_ERROR = ""
+    logger.info("FreeCAD imported successfully.")
 except Exception as e:
     FreeCAD = None
     Part = None
     FREECAD_AVAILABLE = False
     FREECAD_ERROR = str(e)
+    logger.warning("FreeCAD import FAILED: %s", FREECAD_ERROR)
 
 from cad_code_ai_local import generate_cad_code
 from cad_primitives import (
@@ -46,10 +72,6 @@ from cad_primitives import (
 )
 from drawing_generator_dims import generate_drawing_with_dims
 from image_to_cad_run import image_to_cad
-
-BASE_DIR = Path(__file__).parent
-MODELS_DIR = BASE_DIR / "generated_models"
-MODELS_DIR.mkdir(exist_ok=True)
 
 
 # ---------- Toast notification widget ----------
@@ -285,6 +307,8 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
+        logger.info("Text → Model generation started. Description: %s", desc)
+
         self.generate_btn.setEnabled(False)
         self.main.statusBar().showMessage("Generating model...", 0)
         if hasattr(self.main, "toast"):
@@ -341,10 +365,13 @@ class TextToModelTab(QWidget):
             self.export_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
 
+            logger.info("Text → Model generation succeeded. Saved to %s", file_path)
+
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
 
         except Exception as e:
+            logger.exception("Error generating model from text.")
             QMessageBox.critical(self, "Error generating model", str(e))
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
@@ -354,6 +381,7 @@ class TextToModelTab(QWidget):
 
     def open_in_freecad(self):
         if self.last_model_path and self.last_model_path.exists():
+            logger.info("Opening model in FreeCAD: %s", self.last_model_path)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.last_model_path))
@@ -387,6 +415,8 @@ class TextToModelTab(QWidget):
 
             consume_pro_credit(state)
             step_path = self.last_model_path.with_suffix(".step")
+            logger.info("Exporting STEP: %s", step_path)
+
             doc = FreeCAD.open(str(self.last_model_path))
             Part.export(doc.Objects, str(step_path))
             FreeCAD.closeDocument(doc.Name)
@@ -396,6 +426,7 @@ class TextToModelTab(QWidget):
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("STEP exported successfully!", kind="success")
         except Exception as e:
+            logger.exception("Error exporting STEP.")
             QMessageBox.critical(self, "Export STEP failed", str(e))
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Error exporting STEP", kind="error")
@@ -477,6 +508,7 @@ class ImageToModelTab(QWidget):
         if self.main.freecad_available:
             self.gen_btn.setEnabled(True)
         self.main.statusBar().showMessage(f"Loaded image: {fname}", 4000)
+        logger.info("Loaded image for Image → Model: %s", fname)
 
     def on_generate(self):
         if not self.main.freecad_available:
@@ -495,6 +527,9 @@ class ImageToModelTab(QWidget):
         if hasattr(self.main, "toast"):
             self.main.toast.show_message("Generating from image, please wait...", kind="success")
         QApplication.processEvents()
+
+        logger.info("Image → Model generation started. Image: %s", self.image_path)
+
         try:
             result = image_to_cad(str(self.image_path))
             if isinstance(result, (str, Path)):
@@ -505,21 +540,27 @@ class ImageToModelTab(QWidget):
 
             if not self.model_path:
                 self.main.statusBar().showMessage("No model created.", 5000)
+                logger.warning("Image → Model: no model created.")
                 return
 
             self.info_label.setText("Model created from image.")
             self.path_label.setText(f"Path: {self.model_path}")
             self.open_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved model to: {self.model_path}", 5000)
+
+            logger.info("Image → Model succeeded. Model at %s", self.model_path)
+
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Image-based model created!", kind="success")
         except Exception as e:
+            logger.exception("Error generating model from image.")
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Error generating from image", kind="error")
 
     def open_model(self):
         if self.model_path and self.model_path.exists():
+            logger.info("Opening image-based model in FreeCAD: %s", self.model_path)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.model_path))
@@ -581,6 +622,7 @@ class ModelToDrawingTab(QWidget):
             self.model_combo.addItem(p.name, p)
         if not fcstd_files:
             self.model_combo.addItem("(no models)", None)
+        logger.info("Model list refreshed for Model → Drawing. %d models found.", len(fcstd_files))
 
     def on_generate(self):
         if not self.main.freecad_available:
@@ -605,26 +647,35 @@ class ModelToDrawingTab(QWidget):
         if data is None or not Path(data).exists():
             self.main.statusBar().showMessage("No valid model selected.", 4000)
             return
+
+        model_path = Path(data)
+        logger.info("Model → Drawing generation started for %s", model_path)
+
         self.main.statusBar().showMessage("Generating drawing...", 0)
         if hasattr(self.main, "toast"):
             self.main.toast.show_message("Generating drawing, please wait...", kind="success")
         QApplication.processEvents()
         try:
             consume_pro_credit(state)
-            out_path = generate_drawing_with_dims(Path(data))
+            out_path = generate_drawing_with_dims(model_path)
             self.drawing_path = out_path
             self.path_label.setText(f"Drawing: {out_path}")
             self.open_btn.setEnabled(True)
             self.main.statusBar().showMessage(f"Saved drawing to: {out_path}", 5000)
+
+            logger.info("Model → Drawing succeeded. Drawing at %s", out_path)
+
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Drawing generated successfully!", kind="success")
         except Exception as e:
+            logger.exception("Error generating drawing.")
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Error generating drawing", kind="error")
 
     def open_drawing(self):
         if self.drawing_path and self.drawing_path.exists():
+            logger.info("Opening drawing in FreeCAD: %s", self.drawing_path)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Opening drawing in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.drawing_path))
@@ -680,6 +731,12 @@ class MainWindow(QMainWindow):
         self.freecad_available = FREECAD_AVAILABLE
         self.freecad_error = FREECAD_ERROR
 
+        logger.info(
+            "Application started. FreeCAD available: %s. Error: %s",
+            self.freecad_available,
+            self.freecad_error,
+        )
+
         tabs = QTabWidget()
         self.text_tab = TextToModelTab(self)
         self.image_tab = ImageToModelTab(self)
@@ -729,6 +786,7 @@ class MainWindow(QMainWindow):
 
     def open_freecad_download(self):
         url = "https://www.freecad.org/downloads.php"
+        logger.info("Opening FreeCAD download page: %s", url)
         # Show toast message
         if hasattr(self, "toast"):
             self.toast.show_message("Opening FreeCAD download page...", kind="success")
@@ -739,16 +797,23 @@ class MainWindow(QMainWindow):
 # ---------- entry point ----------
 
 def main():
+    logger.info("Launching Qt application.")
     app = QApplication(sys.argv)
 
     style_path = BASE_DIR / "style.qss"
     if style_path.exists():
-        with open(style_path, "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+        try:
+            with open(style_path, "r", encoding="utf-8") as f:
+                app.setStyleSheet(f.read())
+            logger.info("Loaded style.qss.")
+        except Exception:
+            logger.exception("Failed to load style.qss.")
 
     win = MainWindow()
     win.show()
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    logger.info("Qt application exited with code %s.", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
