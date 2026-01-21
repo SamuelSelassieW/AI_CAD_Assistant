@@ -681,6 +681,7 @@ class ModelToDrawingTab(QWidget):
             os.startfile(str(self.drawing_path))
 
 
+
 # ---------- About dialog ----------
 
 class AboutDialog(QDialog):
@@ -699,6 +700,22 @@ class AboutDialog(QDialog):
             layout.addWidget(QLabel(f"Remaining trial advanced actions: {credits}"))
         layout.addWidget(QLabel(" "))
 
+        # Environment info
+        freecad_status = "Available" if main.freecad_available else "Not found"
+        layout.addWidget(QLabel("<b>Environment</b>"))
+        layout.addWidget(QLabel(f"FreeCAD: {freecad_status}"))
+        if not main.freecad_available and main.freecad_error:
+            # Show a short version of the error (in case it's long)
+            err_txt = main.freecad_error
+            if len(err_txt) > 120:
+                err_txt = err_txt[:120] + "..."
+            layout.addWidget(QLabel(f"FreeCAD error: {err_txt}"))
+
+        layout.addWidget(QLabel(f"Models folder: {MODELS_DIR}"))
+        layout.addWidget(QLabel(f"Log file: {LOG_FILE}"))
+        layout.addWidget(QLabel(" "))
+
+        # Disclaimer
         layout.addWidget(QLabel(
             "This tool is for prototyping and educational use.\n"
             "Generated models and drawings must be reviewed and\n"
