@@ -3,7 +3,13 @@ from pathlib import Path
 
 # ---------- Paths & logging setup ----------
 
-BASE_DIR = Path(__file__).parent
+# When running from PyInstaller, use the folder that contains the .exe.
+# When running from source, use the folder that contains app_gui.py.
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).parent
+else:
+    BASE_DIR = Path(__file__).parent
+
 MODELS_DIR = BASE_DIR / "generated_models"
 MODELS_DIR.mkdir(exist_ok=True)
 
@@ -679,7 +685,6 @@ class ModelToDrawingTab(QWidget):
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Opening drawing in FreeCAD, please wait...", kind="success")
             os.startfile(str(self.drawing_path))
-
 
 
 # ---------- About dialog ----------
