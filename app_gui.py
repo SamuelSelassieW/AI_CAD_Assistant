@@ -10,6 +10,76 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = Path(__file__).parent
 
+
+def setup_freecad_env():
+    """
+    Make sure the embedded Python process can find the FreeCAD DLLs and modules.
+
+    We:
+      - look for a FreeCAD installation (env var or common paths),
+      - add its bin/ and lib/ to the DLL search path,
+      - insert lib/ at the *front* of sys.path so we prefer the system FreeCAD
+        over any partially-bundled copy inside _internal.
+    """
+    candidates: list[Path] = []
+
+    # If user has a custom FreeCAD path in env vars, prefer that
+    env_home = (
+        os.environ.get("FREECAD_HOME")
+        or os.environ.get("FREECAD_DIR")
+        or os.environ.get("FREECAD_BASE")
+    )
+    if env_home:
+        candidates.append(Path(env_home))
+
+    # Common Windows install locations (adjust/add as needed)
+    candidates.extend([
+        Path(r"C:\Program Files\FreeCAD 1.0"),
+        Path(r"C:\Program Files\FreeCAD 0.21.2"),
+        Path(r"C:\Program Files\FreeCAD 0.21.1"),
+        Path(r"C:\Program Files\FreeCAD 0.21"),
+    ])
+
+    for base in candidates:
+        if not base.exists():
+            continue
+
+        bin_dir = base / "bin"
+        lib_dir = base / "lib"
+
+        for d in (bin_dir, lib_dir):
+            if d.exists():
+                # Add to DLL search path (for native .dll dependencies)
+                if hasattr(os, "add_dll_directory"):
+                    try:
+                        os.add_dll_directory(str(d))
+                    except Exception:
+                        # ignore if this fails; PATH may still work
+                        pass
+
+        # Make sure Python searches lib/ *before* PyInstaller's _internal
+        if lib_dir.exists():
+            lib_str = str(lib_dir)
+            if lib_str not in sys.path:
+                sys.path.insert(0, lib_str)
+
+        # We found one working base, no need to try the rest
+        break
+
+
+# If running from the PyInstaller build, also add the _internal folder
+# (where PyInstaller puts most .pyd/.dll files) to the DLL search path.
+if getattr(sys, "frozen", False):
+    internal_dir = BASE_DIR / "_internal"
+    if internal_dir.exists():
+        try:
+            os.add_dll_directory(str(internal_dir))
+        except Exception:
+            pass
+
+# Set up FreeCAD env (bin/lib paths) before importing FreeCAD/Part/cad_primitives
+setup_freecad_env()
+
 MODELS_DIR = BASE_DIR / "generated_models"
 MODELS_DIR.mkdir(exist_ok=True)
 
@@ -497,18 +567,24 @@ class ImageToModelTab(QWidget):
 
     def load_image(self):
         fname, _ = QFileDialog.getOpenFileName(
-            self, "Select image", str(BASE_DIR),
-            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*.*)"
+            self,
+            "Select image",
+            str(BASE_DIR),
+            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*.*)",
         )
         if not fname:
             return
         self.image_path = Path(fname)
         pix = QPixmap(fname)
         if not pix.isNull():
-            self.preview.setPixmap(pix.scaled(
-                400, 300, Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            ))
+            self.preview.setPixmap(
+                pix.scaled(
+                    400,
+                    300,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
         else:
             self.preview.setText(f"Loaded: {fname}")
         if self.main.freecad_available:
@@ -531,7 +607,9 @@ class ImageToModelTab(QWidget):
             return
         self.main.statusBar().showMessage("Generating model from image...", 0)
         if hasattr(self.main, "toast"):
-            self.main.toast.show_message("Generating from image, please wait...", kind="success")
+            self.main.toast.show_message(
+                "Generating from image, please wait...", kind="success"
+            )
         QApplication.processEvents()
 
         logger.info("Image → Model generation started. Image: %s", self.image_path)
@@ -552,23 +630,31 @@ class ImageToModelTab(QWidget):
             self.info_label.setText("Model created from image.")
             self.path_label.setText(f"Path: {self.model_path}")
             self.open_btn.setEnabled(True)
-            self.main.statusBar().showMessage(f"Saved model to: {self.model_path}", 5000)
+            self.main.statusBar().showMessage(
+                f"Saved model to: {self.model_path}", 5000
+            )
 
             logger.info("Image → Model succeeded. Model at %s", self.model_path)
 
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Image-based model created!", kind="success")
+                self.main.toast.show_message(
+                    "Image-based model created!", kind="success"
+                )
         except Exception as e:
             logger.exception("Error generating model from image.")
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Error generating from image", kind="error")
+                self.main.toast.show_message(
+                    "Error generating from image", kind="error"
+                )
 
     def open_model(self):
         if self.model_path and self.model_path.exists():
             logger.info("Opening image-based model in FreeCAD: %s", self.model_path)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
+                self.main.toast.show_message(
+                    "Opening in FreeCAD, please wait...", kind="success"
+                )
             os.startfile(str(self.model_path))
 
 
@@ -588,7 +674,9 @@ class ModelToDrawingTab(QWidget):
         title.setObjectName("cardTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Select a generated model and create a basic engineering drawing.")
+        subtitle = QLabel(
+            "Select a generated model and create a basic engineering drawing."
+        )
         subtitle.setObjectName("secondaryText")
         layout.addWidget(subtitle)
 
@@ -628,7 +716,10 @@ class ModelToDrawingTab(QWidget):
             self.model_combo.addItem(p.name, p)
         if not fcstd_files:
             self.model_combo.addItem("(no models)", None)
-        logger.info("Model list refreshed for Model → Drawing. %d models found.", len(fcstd_files))
+        logger.info(
+            "Model list refreshed for Model → Drawing. %d models found.",
+            len(fcstd_files),
+        )
 
     def on_generate(self):
         if not self.main.freecad_available:
@@ -659,7 +750,9 @@ class ModelToDrawingTab(QWidget):
 
         self.main.statusBar().showMessage("Generating drawing...", 0)
         if hasattr(self.main, "toast"):
-            self.main.toast.show_message("Generating drawing, please wait...", kind="success")
+            self.main.toast.show_message(
+                "Generating drawing, please wait...", kind="success"
+            )
         QApplication.processEvents()
         try:
             consume_pro_credit(state)
@@ -667,23 +760,31 @@ class ModelToDrawingTab(QWidget):
             self.drawing_path = out_path
             self.path_label.setText(f"Drawing: {out_path}")
             self.open_btn.setEnabled(True)
-            self.main.statusBar().showMessage(f"Saved drawing to: {out_path}", 5000)
+            self.main.statusBar().showMessage(
+                f"Saved drawing to: {out_path}", 5000
+            )
 
             logger.info("Model → Drawing succeeded. Drawing at %s", out_path)
 
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Drawing generated successfully!", kind="success")
+                self.main.toast.show_message(
+                    "Drawing generated successfully!", kind="success"
+                )
         except Exception as e:
             logger.exception("Error generating drawing.")
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Error generating drawing", kind="error")
+                self.main.toast.show_message(
+                    "Error generating drawing", kind="error"
+                )
 
     def open_drawing(self):
         if self.drawing_path and self.drawing_path.exists():
             logger.info("Opening drawing in FreeCAD: %s", self.drawing_path)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Opening drawing in FreeCAD, please wait...", kind="success")
+                self.main.toast.show_message(
+                    "Opening drawing in FreeCAD, please wait...", kind="success"
+                )
             os.startfile(str(self.drawing_path))
 
 
@@ -710,7 +811,6 @@ class AboutDialog(QDialog):
         layout.addWidget(QLabel("<b>Environment</b>"))
         layout.addWidget(QLabel(f"FreeCAD: {freecad_status}"))
         if not main.freecad_available and main.freecad_error:
-            # Show a short version of the error (in case it's long)
             err_txt = main.freecad_error
             if len(err_txt) > 120:
                 err_txt = err_txt[:120] + "..."
@@ -721,14 +821,18 @@ class AboutDialog(QDialog):
         layout.addWidget(QLabel(" "))
 
         # Disclaimer
-        layout.addWidget(QLabel(
-            "This tool is for prototyping and educational use.\n"
-            "Generated models and drawings must be reviewed and\n"
-            "validated by a qualified engineer before real‑world use."
-        ))
-        layout.addWidget(QLabel(
-            "See TERMS.md in the repository for full terms and disclaimer."
-        ))
+        layout.addWidget(
+            QLabel(
+                "This tool is for prototyping and educational use.\n"
+                "Generated models and drawings must be reviewed and\n"
+                "validated by a qualified engineer before real‑world use."
+            )
+        )
+        layout.addWidget(
+            QLabel(
+                "See TERMS.md in the repository for full terms and disclaimer."
+            )
+        )
 
         btns = QHBoxLayout()
         btns.addStretch()
@@ -809,10 +913,10 @@ class MainWindow(QMainWindow):
     def open_freecad_download(self):
         url = "https://www.freecad.org/downloads.php"
         logger.info("Opening FreeCAD download page: %s", url)
-        # Show toast message
         if hasattr(self, "toast"):
-            self.toast.show_message("Opening FreeCAD download page...", kind="success")
-        # Open default browser
+            self.toast.show_message(
+                "Opening FreeCAD download page...", kind="success"
+            )
         webbrowser.open(url)
 
 
