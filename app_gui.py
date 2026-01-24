@@ -1,4 +1,4 @@
-import sys, os, webbrowser, logging
+import sys, os, webbrowser, logging, traceback, textwrap
 from pathlib import Path
 
 # ---------- Paths & logging setup ----------
@@ -77,8 +77,7 @@ if getattr(sys, "frozen", False):
         except Exception:
             pass
 
-# Set up FreeCAD env (bin/lib paths) before importing FreeCAD/Part/cad_primitives
-setup_freecad_env()
+# NOTE: we call setup_freecad_env() *after* importing PyQt6 to avoid DLL conflicts.
 
 MODELS_DIR = BASE_DIR / "generated_models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -110,6 +109,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtProperty
 from PyQt6.QtGui import QPixmap, QColor, QPalette
+
+# Now that PyQt is imported and its Qt DLLs are loaded, we can safely
+# adjust the DLL search paths for FreeCAD.
+setup_freecad_env()
 
 # Try to import FreeCAD; if not available, keep running but disable generation features
 try:
@@ -190,22 +193,20 @@ class ToastWidget(QWidget):
         self.hide()
 
     def set_success_style(self):
-        # Transparent background, green border, light-green text
         self.frame.setStyleSheet("""
             QFrame#toastFrame {
-                background-color: rgba(15, 23, 42, 0.3);  /* fully transparent */
-                border: 1px solid #22c55e;                 /* green border */
+                background-color: rgba(15, 23, 42, 0.3);
+                border: 1px solid #22c55e;
                 border-radius: 8px;
             }
         """)
         self.label.setStyleSheet("color: #bbf7d0; font-weight: 600;")
 
     def set_error_style(self):
-        # Transparent background, red border, light-red text
         self.frame.setStyleSheet("""
             QFrame#toastFrame {
                 background-color: rgba(15, 23, 42, 0.0);
-                border: 1px solid #f97373;                 /* red border */
+                border: 1px solid #f97373;
                 border-radius: 8px;
             }
         """)
@@ -233,7 +234,6 @@ class ToastWidget(QWidget):
             pw = parent.width()
             self.adjustSize()
             w = self.width()
-            # 10 px from top, centered horizontally
             self.move((pw - w) // 2, 10)
 
         self.setWindowOpacity(1.0)
@@ -258,7 +258,7 @@ class TextToModelTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
 
-        # -------- Left card: prompt & controls --------
+        # -------- Left card --------
         left = QFrame()
         left.setObjectName("card")
         l_layout = QVBoxLayout(left)
@@ -320,7 +320,7 @@ class TextToModelTab(QWidget):
 
         splitter.addWidget(left)
 
-        # -------- Right card: generated code & actions --------
+        # -------- Right card --------
         right = QFrame()
         right.setObjectName("card")
         r_layout = QVBoxLayout(right)
@@ -448,7 +448,9 @@ class TextToModelTab(QWidget):
 
         except Exception as e:
             logger.exception("Error generating model from text.")
-            QMessageBox.critical(self, "Error generating model", str(e))
+            tb = traceback.format_exc()
+            short_tb = "\n".join(tb.splitlines()[-15:])
+            QMessageBox.critical(self, "Error generating model", short_tb)
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Error generating model", kind="error")
@@ -806,7 +808,6 @@ class AboutDialog(QDialog):
             layout.addWidget(QLabel(f"Remaining trial advanced actions: {credits}"))
         layout.addWidget(QLabel(" "))
 
-        # Environment info
         freecad_status = "Available" if main.freecad_available else "Not found"
         layout.addWidget(QLabel("<b>Environment</b>"))
         layout.addWidget(QLabel(f"FreeCAD: {freecad_status}"))
@@ -820,7 +821,6 @@ class AboutDialog(QDialog):
         layout.addWidget(QLabel(f"Log file: {LOG_FILE}"))
         layout.addWidget(QLabel(" "))
 
-        # Disclaimer
         layout.addWidget(
             QLabel(
                 "This tool is for prototyping and educational use.\n"
@@ -853,7 +853,6 @@ class MainWindow(QMainWindow):
         self.lic_state = load_state()
         self.is_pro = is_pro(self.lic_state)
 
-        # Environment: is FreeCAD available?
         self.freecad_available = FREECAD_AVAILABLE
         self.freecad_error = FREECAD_ERROR
 
@@ -893,12 +892,10 @@ class MainWindow(QMainWindow):
         download_btn.clicked.connect(self.open_freecad_download)
         status.addPermanentWidget(download_btn)
 
-        # Toast notification overlay
         self.toast = ToastWidget(self)
         self.toast.hide()
 
         if not self.freecad_available:
-            # Show a clear toast warning on startup
             self.toast.show_message(
                 "FreeCAD is not installed or could not be imported. "
                 "Install FreeCAD, then restart the AI CAD Assistant.",
@@ -926,14 +923,27 @@ def main():
     logger.info("Launching Qt application.")
     app = QApplication(sys.argv)
 
-    style_path = BASE_DIR / "style.qss"
-    if style_path.exists():
+    candidates = [
+        BASE_DIR / "style.qss",
+        BASE_DIR / "_internal" / "style.qss",
+    ]
+
+    style_path = None
+    for p in candidates:
+        logger.info("Checking style at %s (exists=%s)", p, p.exists())
+        if p.exists():
+            style_path = p
+            break
+
+    if style_path:
         try:
             with open(style_path, "r", encoding="utf-8") as f:
                 app.setStyleSheet(f.read())
-            logger.info("Loaded style.qss.")
+            logger.info("Loaded style.qss from %s", style_path)
         except Exception:
-            logger.exception("Failed to load style.qss.")
+            logger.exception("Failed to load style.qss from %s", style_path)
+    else:
+        logger.warning("style.qss not found; using default Qt theme.")
 
     win = MainWindow()
     win.show()
