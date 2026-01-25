@@ -1,15 +1,37 @@
-import FreeCAD, Part
-from FreeCAD import Vector
+import sys
 import math
 import subprocess
 from pathlib import Path
 
+import FreeCAD, Part
+from FreeCAD import Vector
+
+# Path to FreeCAD's command-line executable
 FREECADCMD = r"C:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe"
-_SCRIPT_DIR = Path(__file__).parent
-_FAST_BOLT_SCRIPT = _SCRIPT_DIR / "fasteners_bolt_script.py"
-_GEAR_SCRIPT = _SCRIPT_DIR / "gears_script.py"
+
+# When frozen (PyInstaller), use the folder that contains the .exe.
+# When running from source, use the folder that contains this file.
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).parent
+else:
+    BASE_DIR = Path(__file__).parent
+
+# Where the helper scripts live (we will package them next to the .exe)
+_FAST_BOLT_SCRIPT = BASE_DIR / "fasteners_bolt_script.py"
+_GEAR_SCRIPT = BASE_DIR / "gears_script.py"
+
+# Shared folder for generated .FCStd templates (bolts, gears, etc.)
+_GENERATED_DIR = BASE_DIR / "generated_models"
+_GENERATED_DIR.mkdir(exist_ok=True)
+
 
 def make_fasteners_hex_bolt(size, length):
+    """
+    Generate or reuse a hex bolt using the Fasteners workbench via freecadcmd.
+
+    size  : e.g. 4, 8, 'M8'
+    length: length in mm
+    """
     # normalize inputs
     if isinstance(size, (int, float)):
         size_str = f"M{int(size)}"
@@ -17,24 +39,47 @@ def make_fasteners_hex_bolt(size, length):
         size_str = str(size)
     length_mm = float(length)
 
-    out_dir = _SCRIPT_DIR / "generated_models"
+    out_dir = _GENERATED_DIR
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"fast_bolt_{size_str}_{int(length_mm)}.FCStd"
+
     if not out_path.exists():
-        subprocess.run(
-            [FREECADCMD, str(_FAST_BOLT_SCRIPT), size_str, str(int(length_mm)), str(out_path)],
-            check=True,
-        )
+        # Call external FreeCAD in command-line mode to create the bolt file
+        cmd = [
+            FREECADCMD,
+            str(_FAST_BOLT_SCRIPT),
+            size_str,
+            str(int(length_mm)),
+            str(out_path),
+        ]
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+        if result.returncode != 0 or not out_path.exists():
+            # Helpful error message if generation failed
+            msg = (
+                f"Failed to generate bolt via freecadcmd.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Exit code: {result.returncode}\n"
+                f"STDOUT:\n{result.stdout}\n"
+                f"STDERR:\n{result.stderr}\n"
+                f"Expected output file: {out_path}"
+            )
+            raise OSError(msg)
+
+    # Now open the generated FCStd and return its first shape
     doc = FreeCAD.open(str(out_path))
     shape = doc.Objects[0].Shape
     FreeCAD.closeDocument(doc.Name)
     return shape
 
+
 def make_box(L, W, H):
     return Part.makeBox(L, W, H)
 
+
 def make_cylinder(radius, height):
     return Part.makeCylinder(radius, height)
+
 
 def make_cyl_with_hole(outer_radius, height,
                        hole_radius, hole_depth=None, depth=None):
@@ -51,6 +96,7 @@ def make_cyl_with_hole(outer_radius, height,
     inner = Part.makeCylinder(hole_radius, hole_depth * 1.2, Vector(0, 0, 0))
     return outer.cut(inner)
 
+
 def make_tri_prism(base, height, thickness):
     """
     Right triangle in XY plane, extruded along +Z by 'thickness'.
@@ -65,6 +111,7 @@ def make_tri_prism(base, height, thickness):
     prism = face.extrude(Vector(0, 0, thickness))
     return prism
 
+
 def make_plate_with_hole(L, W, thickness, hole_radius):
     plate = Part.makeBox(L, W, thickness)
     if hole_radius is None or hole_radius <= 0:
@@ -76,8 +123,6 @@ def make_plate_with_hole(L, W, thickness, hole_radius):
     )
     return plate.cut(hole)
 
-import math
-from FreeCAD import Vector
 
 def make_hex_prism(flat, thickness):
     """Regular hex prism; 'flat' = across-flats size."""
@@ -90,6 +135,7 @@ def make_hex_prism(flat, thickness):
     face = Part.Face(wire)
     return face.extrude(Vector(0, 0, thickness))
 
+
 def make_hex_nut(flat, thickness, hole_radius):
     body = make_hex_prism(flat, thickness)
     hole = Part.makeCylinder(
@@ -99,14 +145,15 @@ def make_hex_nut(flat, thickness, hole_radius):
     )
     return body.cut(hole)
 
+
 def make_hex_bolt(shaft_radius, shaft_length, head_flat, head_thickness):
     shaft = Part.makeCylinder(shaft_radius, shaft_length)
     head = make_hex_prism(head_flat, head_thickness)
     head.translate(Vector(0, 0, shaft_length))
     return shaft.fuse(head)
 
-# -------- Screw / bolt helpers (no detailed threads yet) --------
-from FreeCAD import Vector
+
+# -------- Screw / bolt helpers (simple, no detailed threads) --------
 
 def make_screw_blank(shaft_diameter, shaft_length, head_diameter, head_height):
     r_shaft = shaft_diameter / 2.0
@@ -115,6 +162,7 @@ def make_screw_blank(shaft_diameter, shaft_length, head_diameter, head_height):
     head = Part.makeCylinder(r_head, head_height)
     head.translate(Vector(0, 0, shaft_length))
     return shaft.fuse(head)
+
 
 def make_slotted_screw(shaft_diameter, shaft_length, head_diameter, head_height,
                        slot_width, slot_depth):
@@ -125,6 +173,7 @@ def make_slotted_screw(shaft_diameter, shaft_length, head_diameter, head_height,
                           -slot_width / 2.0,
                           shaft_length + head_height - slot_depth))
     return screw.cut(slot)
+
 
 def make_cross_screw(shaft_diameter, shaft_length, head_diameter, head_height,
                      slot_width, slot_depth):
@@ -139,6 +188,7 @@ def make_cross_screw(shaft_diameter, shaft_length, head_diameter, head_height,
     slot2.rotate(Vector(0, 0, center_z), Vector(0, 0, 1), 90)
     return screw.cut(slot1).cut(slot2)
 
+
 def make_socket_head_screw(shaft_diameter, shaft_length, head_diameter, head_height,
                            socket_flat):
     screw = make_screw_blank(shaft_diameter, shaft_length, head_diameter, head_height)
@@ -146,6 +196,7 @@ def make_socket_head_screw(shaft_diameter, shaft_length, head_diameter, head_hei
     hole = make_hex_prism(socket_flat, head_height * 1.2)
     hole.translate(Vector(0, 0, shaft_length - head_height * 0.1))
     return screw.cut(hole)
+
 
 def make_L_bracket(leg_x, leg_y, width, thickness, fillet_radius=0.0):
     """
@@ -172,7 +223,7 @@ def make_flange(outer_d, inner_d, thickness,
         on a circle of diameter bolt_circle_d
     """
     r_out = outer_d / 2.0
-    r_in  = inner_d / 2.0
+    r_in = inner_d / 2.0
 
     outer = Part.makeCylinder(r_out, thickness)
     inner = Part.makeCylinder(r_in, thickness * 1.2, Vector(0, 0, -0.1 * thickness))
@@ -196,36 +247,59 @@ def make_flange(outer_d, inner_d, thickness,
 
     return flange
 
+
 def _run_gear(kind, *params, name="gear"):
-    out_dir = _SCRIPT_DIR / "generated_models"
+    out_dir = _GENERATED_DIR
     out_dir.mkdir(exist_ok=True)
     tag = "_".join(str(p).replace(".", "p") for p in params)
     out_path = out_dir / f"{kind}_{tag}.FCStd"
+
     if not out_path.exists():
-        subprocess.run(
-            [FREECADCMD, str(_GEAR_SCRIPT), kind, *[str(p) for p in params], str(out_path)],
-            check=True,
-        )
+        cmd = [
+            FREECADCMD,
+            str(_GEAR_SCRIPT),
+            kind,
+            *[str(p) for p in params],
+            str(out_path),
+        ]
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+        if result.returncode != 0 or not out_path.exists():
+            msg = (
+                f"Failed to generate gear via freecadcmd.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Exit code: {result.returncode}\n"
+                f"STDOUT:\n{result.stdout}\n"
+                f"STDERR:\n{result.stderr}\n"
+                f"Expected output file: {out_path}"
+            )
+            raise OSError(msg)
+
     doc = FreeCAD.open(str(out_path))
     shape = doc.Objects[0].Shape
     FreeCAD.closeDocument(doc.Name)
     return shape
 
+
 def make_spur_gear(module, teeth, width, *_, **__):
     """Parallel spur gear."""
     return _run_gear("spur", float(module), int(teeth), float(width))
+
 
 def make_helical_gear(module, teeth, width, helix_angle, *_, **__):
     """Parallel helical gear."""
     return _run_gear("helical", float(module), int(teeth), float(width), float(helix_angle))
 
+
 def make_internal_gear(module, teeth, thickness, *_, **__):
     """Internal involute gear."""
     return _run_gear("internal", float(module), int(teeth), float(thickness))
 
+
 def make_bevel_gear(module, teeth, height, beta, *_, **__):
     """Bevel gear (intersecting shafts)."""
     return _run_gear("bevel", float(module), int(teeth), float(height), float(beta))
+
 
 def make_worm_gear(module, teeth, height, beta, diameter, *_, **__):
     """Worm gear (non-parallel, non-intersecting)."""
