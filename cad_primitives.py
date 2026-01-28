@@ -6,6 +6,10 @@ from pathlib import Path
 import FreeCAD, Part
 from FreeCAD import Vector
 
+# -------------------------------------------------------------------
+# Paths / environment
+# -------------------------------------------------------------------
+
 # Path to FreeCAD's command-line executable
 FREECADCMD = r"C:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe"
 
@@ -16,7 +20,7 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = Path(__file__).parent
 
-# Where the helper scripts live (we will package them next to the .exe)
+# Where the helper scripts live (packaged next to the .exe)
 _FAST_BOLT_SCRIPT = BASE_DIR / "fasteners_bolt_script.py"
 _GEAR_SCRIPT = BASE_DIR / "gears_script.py"
 
@@ -25,13 +29,19 @@ _GENERATED_DIR = BASE_DIR / "generated_models"
 _GENERATED_DIR.mkdir(exist_ok=True)
 
 
+# -------------------------------------------------------------------
+# Bolts (Fasteners / simple hex bolt)
+# -------------------------------------------------------------------
+
 def make_fasteners_hex_bolt(size, length):
     """
-    Generate or reuse a hex bolt using the Fasteners workbench via freecadcmd.
+    Hex bolt using the Fasteners workbench when running from source,
+    or a built‑in approximate hex bolt when running from the packaged .exe.
 
-    size  : e.g. 4, 8, 'M8'
-    length: length in mm
+    size  : e.g. 4, 8, "M8"
+    length: shaft length in mm
     """
+
     # normalize inputs
     if isinstance(size, (int, float)):
         size_str = f"M{int(size)}"
@@ -39,12 +49,39 @@ def make_fasteners_hex_bolt(size, length):
         size_str = str(size)
     length_mm = float(length)
 
+    # --- CASE 1: running from the PyInstaller .exe -----------------
+    # sys.frozen is True only inside the packaged executable.
+    if getattr(sys, "frozen", False):
+        # Derive a nominal diameter d from the size string (e.g. "M8" -> 8.0)
+        s = size_str.upper()
+        if s.startswith("M"):
+            try:
+                d = float(s[1:])
+            except ValueError:
+                d = 8.0
+        else:
+            try:
+                d = float(s)
+            except ValueError:
+                d = 8.0
+
+        shaft_radius = d / 2.0
+        shaft_length = length_mm
+
+        # Rough proportions for a hex head
+        head_flat = 1.5 * d       # across flats
+        head_thickness = 0.6 * d  # head height
+
+        # Use our own simple hex‑bolt geometry (no external FreeCAD process)
+        return make_hex_bolt(shaft_radius, shaft_length, head_flat, head_thickness)
+
+    # --- CASE 2: running from source (normal Python) ----------------
+    # Keep the existing behavior: use freecadcmd + Fasteners script.
     out_dir = _GENERATED_DIR
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"fast_bolt_{size_str}_{int(length_mm)}.FCStd"
 
     if not out_path.exists():
-        # Call external FreeCAD in command-line mode to create the bolt file
         cmd = [
             FREECADCMD,
             str(_FAST_BOLT_SCRIPT),
@@ -55,7 +92,6 @@ def make_fasteners_hex_bolt(size, length):
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
         if result.returncode != 0 or not out_path.exists():
-            # Helpful error message if generation failed
             msg = (
                 f"Failed to generate bolt via freecadcmd.\n"
                 f"Command: {' '.join(cmd)}\n"
@@ -66,12 +102,15 @@ def make_fasteners_hex_bolt(size, length):
             )
             raise OSError(msg)
 
-    # Now open the generated FCStd and return its first shape
     doc = FreeCAD.open(str(out_path))
     shape = doc.Objects[0].Shape
     FreeCAD.closeDocument(doc.Name)
     return shape
 
+
+# -------------------------------------------------------------------
+# Basic primitives
+# -------------------------------------------------------------------
 
 def make_box(L, W, H):
     return Part.makeBox(L, W, H)
@@ -124,6 +163,10 @@ def make_plate_with_hole(L, W, thickness, hole_radius):
     return plate.cut(hole)
 
 
+# -------------------------------------------------------------------
+# Hex shapes, nuts, bolts
+# -------------------------------------------------------------------
+
 def make_hex_prism(flat, thickness):
     """Regular hex prism; 'flat' = across-flats size."""
     r = flat / (3 ** 0.5)  # circumradius
@@ -153,7 +196,9 @@ def make_hex_bolt(shaft_radius, shaft_length, head_flat, head_thickness):
     return shaft.fuse(head)
 
 
-# -------- Screw / bolt helpers (simple, no detailed threads) --------
+# -------------------------------------------------------------------
+# Simple screw helpers
+# -------------------------------------------------------------------
 
 def make_screw_blank(shaft_diameter, shaft_length, head_diameter, head_height):
     r_shaft = shaft_diameter / 2.0
@@ -192,7 +237,6 @@ def make_cross_screw(shaft_diameter, shaft_length, head_diameter, head_height,
 def make_socket_head_screw(shaft_diameter, shaft_length, head_diameter, head_height,
                            socket_flat):
     screw = make_screw_blank(shaft_diameter, shaft_length, head_diameter, head_height)
-    # hex socket cut into head
     hole = make_hex_prism(socket_flat, head_height * 1.2)
     hole.translate(Vector(0, 0, shaft_length - head_height * 0.1))
     return screw.cut(hole)
@@ -211,6 +255,10 @@ def make_L_bracket(leg_x, leg_y, width, thickness, fillet_radius=0.0):
         bracket = bracket.makeFillet(fillet_radius, bracket.Edges)
     return bracket
 
+
+# -------------------------------------------------------------------
+# Flange
+# -------------------------------------------------------------------
 
 def make_flange(outer_d, inner_d, thickness,
                 bolt_circle_d=0.0, bolt_hole_d=0.0, bolt_count=0):
@@ -248,7 +296,23 @@ def make_flange(outer_d, inner_d, thickness,
     return flange
 
 
+# -------------------------------------------------------------------
+# Gears (via external freecadcmd script)
+# -------------------------------------------------------------------
+
 def _run_gear(kind, *params, name="gear"):
+    """
+    Use external freecadcmd + gears_script.py to generate gears
+    when running from source. In the packaged .exe we raise a clear
+    error instead of failing deep inside FreeCAD.
+    """
+    # In the .exe, don't attempt to run external scripts; it's fragile.
+    if getattr(sys, "frozen", False):
+        raise OSError(
+            "Gear generation via gears_script.py is not available in the "
+            "packaged app. Please run app_gui.py from source to generate gears."
+        )
+
     out_dir = _GENERATED_DIR
     out_dir.mkdir(exist_ok=True)
     tag = "_".join(str(p).replace(".", "p") for p in params)

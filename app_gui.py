@@ -400,7 +400,16 @@ class TextToModelTab(QWidget):
             class _SafePart:
                 @staticmethod
                 def show(shape):
-                    Part.show(shape)
+                    """
+                    Safe replacement for Part.show(shape) that does not rely
+                    on FreeCAD's GUI. It simply adds a Part::Feature to the
+                    active document and assigns the shape.
+                    """
+                    doc = FreeCAD.ActiveDocument
+                    if doc is None:
+                        doc = FreeCAD.newDocument("AIModel")
+                    obj = doc.addObject("Part::Feature", "AI_Shape")
+                    obj.Shape = shape
 
             exec_globals = {
                 "__builtins__": {},
