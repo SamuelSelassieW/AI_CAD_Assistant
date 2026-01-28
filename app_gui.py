@@ -401,14 +401,25 @@ class TextToModelTab(QWidget):
                 @staticmethod
                 def show(shape):
                     """
-                    Safe replacement for Part.show(shape) that does not rely
-                    on FreeCAD's GUI. It simply adds a Part::Feature to the
-                    active document and assigns the shape.
+                    Safe replacement for Part.show(shape).
+
+                    - In a normal Python run: create a standard Part::Feature.
+                    - In the packaged .exe (sys.frozen=True): create a
+                      Part::FeaturePython, which avoids some GUI/material
+                      machinery that can fail in frozen apps.
                     """
+                    # Get or create an active document
                     doc = FreeCAD.ActiveDocument
                     if doc is None:
                         doc = FreeCAD.newDocument("AIModel")
-                    obj = doc.addObject("Part::Feature", "AI_Shape")
+
+                    # Choose type depending on environment
+                    if getattr(sys, "frozen", False):
+                        type_name = "Part::FeaturePython"
+                    else:
+                        type_name = "Part::Feature"
+
+                    obj = doc.addObject(type_name, "AI_Shape")
                     obj.Shape = shape
 
             exec_globals = {
