@@ -472,20 +472,78 @@ class TextToModelTab(QWidget):
         self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
 
     def _generate_via_freecadcmd(self, code: str):
-        """Run the CAD code via external freecadcmd (used in the frozen .exe)."""
+        """
+        Run the CAD code via external freecadcmd (used in the frozen .exe).
+
+        We write a full Python script (imports + helper Part.show + your code +
+        save) to _temp/gen_code.py and call:
+
+            freecadcmd.exe gen_code.py
+        """
         # Where to store the final model
         idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
         out_path = MODELS_DIR / f"model_{idx}.FCStd"
 
-        # Write the generated code to a temporary .py file
+        # Temp script path
         temp_dir = MODELS_DIR / "_temp"
         temp_dir.mkdir(exist_ok=True)
-        code_path = temp_dir / "gen_code.py"
-        code_path.write_text(code, encoding="utf-8")
+        script_path = temp_dir / "gen_code.py"
 
-        runner = BASE_DIR / "text_model_runner.py"
+        # Literal paths for embedding into the script
+        base_literal = repr(str(BASE_DIR))
+        out_literal = repr(str(out_path))
 
-        cmd = [FREECADCMD, str(runner), str(code_path), str(out_path)]
+        header = f"""import sys
+from pathlib import Path
+import FreeCAD, Part
+
+BASE_DIR = Path({base_literal})
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from cad_primitives import (
+    make_box,
+    make_cylinder,
+    make_tri_prism,
+    make_plate_with_hole,
+    make_hex_prism,
+    make_hex_nut,
+    make_hex_bolt,
+    make_screw_blank,
+    make_slotted_screw,
+    make_cross_screw,
+    make_socket_head_screw,
+    make_fasteners_hex_bolt,
+    make_cyl_with_hole,
+    make_flange,
+    make_spur_gear,
+    make_helical_gear,
+    make_internal_gear,
+    make_bevel_gear,
+    make_worm_gear,
+)
+
+doc = FreeCAD.newDocument("AIModel")
+
+class _SafePart:
+    @staticmethod
+    def show(shape):
+        obj = doc.addObject("Part::Feature", "AI_Shape")
+        obj.Shape = shape
+
+Part = _SafePart
+"""
+
+        footer = f"""
+
+doc.recompute()
+doc.saveAs({out_literal})
+"""
+
+        script_text = header + "\n" + code + "\n" + footer
+        script_path.write_text(script_text, encoding="utf-8")
+
+        cmd = [FREECADCMD, str(script_path)]
         logger.info("Running freecadcmd for Text → Model: %s", " ".join(cmd))
 
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
