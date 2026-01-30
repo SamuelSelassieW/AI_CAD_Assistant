@@ -1,4 +1,4 @@
-import sys, os, webbrowser, logging, traceback, textwrap
+import sys, os, webbrowser, logging, traceback, textwrap, subprocess
 from pathlib import Path
 
 # ---------- Paths & logging setup ----------
@@ -148,6 +148,7 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    FREECADCMD,      # from cad_primitives
 )
 from drawing_generator_dims import generate_drawing_with_dims
 from image_to_cad_run import image_to_cad
@@ -395,73 +396,14 @@ class TextToModelTab(QWidget):
             code = generate_cad_code(desc)
             self.code_view.setPlainText(code)
 
-            doc = FreeCAD.newDocument("AIModel")
+            # In the frozen .exe, use external freecadcmd to avoid embedded
+            # FreeCAD GUI/material issues. In normal Python, use embedded FreeCAD.
+            if getattr(sys, "frozen", False):
+                self._generate_via_freecadcmd(code)
+            else:
+                self._generate_in_process(code)
 
-            class _SafePart:
-                @staticmethod
-                def show(shape):
-                    """
-                    Safe replacement for Part.show(shape).
-
-                    - In a normal Python run: create a standard Part::Feature.
-                    - In the packaged .exe (sys.frozen=True): create a
-                      Part::FeaturePython, which avoids some GUI/material
-                      machinery that can fail in frozen apps.
-                    """
-                    # Get or create an active document
-                    doc = FreeCAD.ActiveDocument
-                    if doc is None:
-                        doc = FreeCAD.newDocument("AIModel")
-
-                    # Choose type depending on environment
-                    if getattr(sys, "frozen", False):
-                        type_name = "Part::FeaturePython"
-                    else:
-                        type_name = "Part::Feature"
-
-                    obj = doc.addObject(type_name, "AI_Shape")
-                    obj.Shape = shape
-
-            exec_globals = {
-                "__builtins__": {},
-                "FreeCAD": FreeCAD,
-                "Part": _SafePart,
-                "make_box": make_box,
-                "make_cylinder": make_cylinder,
-                "make_tri_prism": make_tri_prism,
-                "make_plate_with_hole": make_plate_with_hole,
-                "make_hex_prism": make_hex_prism,
-                "make_hex_nut": make_hex_nut,
-                "make_hex_bolt": make_hex_bolt,
-                "make_screw_blank": make_screw_blank,
-                "make_slotted_screw": make_slotted_screw,
-                "make_cross_screw": make_cross_screw,
-                "make_socket_head_screw": make_socket_head_screw,
-                "make_fasteners_hex_bolt": make_fasteners_hex_bolt,
-                "make_cyl_with_hole": make_cyl_with_hole,
-                "make_flange": make_flange,
-                "make_spur_gear": make_spur_gear,
-                "make_helical_gear": make_helical_gear,
-                "make_internal_gear": make_internal_gear,
-                "make_bevel_gear": make_bevel_gear,
-                "make_worm_gear": make_worm_gear,
-            }
-
-            exec(code, exec_globals, {})
-            doc.recompute()
-
-            idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
-            file_path = MODELS_DIR / f"model_{idx}.FCStd"
-            doc.saveAs(str(file_path))
-
-            self.last_model_path = file_path
-            self.model_label.setText("Model: created")
-            self.path_label.setText(f"Saved to: {file_path}")
-            self.open_btn.setEnabled(True)
-            self.export_btn.setEnabled(True)
-            self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
-
-            logger.info("Text → Model generation succeeded. Saved to %s", file_path)
+            logger.info("Text → Model generation succeeded. Saved to %s", self.last_model_path)
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
@@ -476,6 +418,94 @@ class TextToModelTab(QWidget):
                 self.main.toast.show_message("Error generating model", kind="error")
         finally:
             self.generate_btn.setEnabled(True)
+
+    def _generate_in_process(self, code: str):
+        """Run the CAD code using the embedded FreeCAD (Python run only)."""
+        doc = FreeCAD.newDocument("AIModel")
+
+        class _SafePart:
+            @staticmethod
+            def show(shape):
+                doc_inner = FreeCAD.ActiveDocument
+                if doc_inner is None:
+                    doc_inner = FreeCAD.newDocument("AIModel")
+                obj = doc_inner.addObject("Part::Feature", "AI_Shape")
+                obj.Shape = shape
+
+        exec_globals = {
+            "__builtins__": {},
+            "FreeCAD": FreeCAD,
+            "Part": _SafePart,
+            "make_box": make_box,
+            "make_cylinder": make_cylinder,
+            "make_tri_prism": make_tri_prism,
+            "make_plate_with_hole": make_plate_with_hole,
+            "make_hex_prism": make_hex_prism,
+            "make_hex_nut": make_hex_nut,
+            "make_hex_bolt": make_hex_bolt,
+            "make_screw_blank": make_screw_blank,
+            "make_slotted_screw": make_slotted_screw,
+            "make_cross_screw": make_cross_screw,
+            "make_socket_head_screw": make_socket_head_screw,
+            "make_fasteners_hex_bolt": make_fasteners_hex_bolt,
+            "make_cyl_with_hole": make_cyl_with_hole,
+            "make_flange": make_flange,
+            "make_spur_gear": make_spur_gear,
+            "make_helical_gear": make_helical_gear,
+            "make_internal_gear": make_internal_gear,
+            "make_bevel_gear": make_bevel_gear,
+            "make_worm_gear": make_worm_gear,
+        }
+
+        exec(code, exec_globals, exec_globals)
+        doc.recompute()
+
+        idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
+        file_path = MODELS_DIR / f"model_{idx}.FCStd"
+        doc.saveAs(str(file_path))
+
+        self.last_model_path = file_path
+        self.model_label.setText("Model: created")
+        self.path_label.setText(f"Saved to: {file_path}")
+        self.open_btn.setEnabled(True)
+        self.export_btn.setEnabled(True)
+        self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
+
+    def _generate_via_freecadcmd(self, code: str):
+        """Run the CAD code via external freecadcmd (used in the frozen .exe)."""
+        # Where to store the final model
+        idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
+        out_path = MODELS_DIR / f"model_{idx}.FCStd"
+
+        # Write the generated code to a temporary .py file
+        temp_dir = MODELS_DIR / "_temp"
+        temp_dir.mkdir(exist_ok=True)
+        code_path = temp_dir / "gen_code.py"
+        code_path.write_text(code, encoding="utf-8")
+
+        runner = BASE_DIR / "text_model_runner.py"
+
+        cmd = [FREECADCMD, str(runner), str(code_path), str(out_path)]
+        logger.info("Running freecadcmd for Text → Model: %s", " ".join(cmd))
+
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+        if result.returncode != 0 or not out_path.exists():
+            msg = (
+                "freecadcmd failed while generating the model.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Exit code: {result.returncode}\n\n"
+                f"STDOUT:\n{result.stdout}\n\n"
+                f"STDERR:\n{result.stderr}"
+            )
+            raise RuntimeError(msg)
+
+        self.last_model_path = out_path
+        self.model_label.setText("Model: created")
+        self.path_label.setText(f"Saved to: {out_path}")
+        self.open_btn.setEnabled(True)
+        self.export_btn.setEnabled(True)
+        self.main.statusBar().showMessage(f"Saved model to: {out_path}", 5000)
 
     def open_in_freecad(self):
         if self.last_model_path and self.last_model_path.exists():
