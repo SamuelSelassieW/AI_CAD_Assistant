@@ -6,10 +6,11 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('style.qss', '.'),
-        ('fasteners_bolt_script.py', '.'),
-        ('gears_script.py', '.'),
-        ('text_model_runner.py', '.'),
+    ('style.qss', '.'),
+    ('fasteners_bolt_script.py', '.'),
+    ('gears_script.py', '.'),
+    ('text_model_runner.py', '.'),   # still fine to keep
+    ('cad_primitives.py', '.'),      # NEW: make cad_primitives visible to freecadcmd
     ],
     hiddenimports=[],
     hookspath=[],
