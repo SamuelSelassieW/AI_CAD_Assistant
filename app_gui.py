@@ -479,6 +479,10 @@ class TextToModelTab(QWidget):
         save) to _temp/gen_code.py and call:
 
             freecadcmd.exe gen_code.py
+
+        For simplicity on this machine, we point FreeCAD's Python to the
+        original project folder C:\\AI_CAD_Assistant so it can import
+        cad_primitives.py from there.
         """
         # Where to store the final model
         idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
@@ -489,17 +493,17 @@ class TextToModelTab(QWidget):
         temp_dir.mkdir(exist_ok=True)
         script_path = temp_dir / "gen_code.py"
 
-        # Literal paths for embedding into the script
-        base_literal = repr(str(BASE_DIR))
+        # Absolute path to the source project (where cad_primitives.py lives)
+        src_dir_literal = r"C:\AI_CAD_Assistant"
         out_literal = repr(str(out_path))
 
         header = f"""import sys
 from pathlib import Path
 import FreeCAD, Part
 
-BASE_DIR = Path({base_literal})
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+SOURCE_DIR = Path(r\"\"\"{src_dir_literal}\"\"\")
+if str(SOURCE_DIR) not in sys.path:
+    sys.path.insert(0, str(SOURCE_DIR))
 
 from cad_primitives import (
     make_box,
