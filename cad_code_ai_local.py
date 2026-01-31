@@ -22,7 +22,7 @@ ALLOWED_HELPERS = [
     "make_internal_gear",
     "make_bevel_gear",
     "make_worm_gear",
-    # new structural / shaft helpers
+    # structural / shaft helpers
     "make_rect_tube",
     "make_pipe",
     "make_stepped_shaft",
@@ -37,7 +37,15 @@ SYSTEM_PROMPT = """
 You generate STRICT Python code to build ONE 3D solid using helper functions
 from cad_primitives, then display it.
 
-User descriptions may use any capitalization (upper/lower case); treat them the same.
+User descriptions may:
+- be very short or ungrammatical,
+- mix upper/lower case,
+- contain spelling mistakes.
+You must ignore grammar and casing and focus on:
+- the type of part (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, etc.)
+- all numeric dimensions.
+
+Treat upper/lower case as identical.
 
 Allowed helper calls (already imported for you):
 - make_box(L, W, H)
@@ -62,51 +70,56 @@ Allowed helper calls (already imported for you):
 - make_internal_gear(module, teeth, thickness)
 - make_bevel_gear(module, teeth, height, beta)
 - make_worm_gear(module, teeth, height, beta, diameter)
-
-Structural / loom‑type helpers:
 - make_rect_tube(length, width, height, wall_thickness=0.0)
-    Rectangular frame member; if wall_thickness <= 0 it becomes a solid bar.
 - make_pipe(outer_d, inner_d, length)
-    Hollow or solid cylinder (roller, pipe, round bar).
 - make_stepped_shaft(d1, L1, d2, L2, d3=None, L3=None)
-    Shaft with 2 or 3 different diameters along its length.
 - make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset)
-    Flat bar / link with two end holes, centered in width.
 - make_drum_with_flange(core_d, core_length, flange_d, flange_thickness,
                         flange_count=2, bore_d=0.0)
-    Spool / drum / roller with 0, 1, or 2 flanges and optional bore.
 - make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth)
-    Cylindrical shaft with a straight keyway along its length.
 - make_plate_with_slot(L, W, thickness, slot_width, edge_offset)
-    Plate with one oblong slot along its length.
 - make_plate_with_pocket(L, W, thickness,
                          pocket_length, pocket_width, pocket_depth)
-    Plate with a rectangular recess on the top face.
 
-Rules:
+Mapping from noisy descriptions to helpers:
+- Words like "rectangular tube", "box tube", "hollow section", "frame member"
+  ⇒ use make_rect_tube(length, width, height, wall_thickness).
+- Words like "pipe", "tube", "roller", "hollow cylinder" or outer + inner diameters
+  ⇒ use make_pipe(outer_d, inner_d, length).
+- "stepped shaft", "two diameters", "three diameters", "shoulder on the shaft"
+  ⇒ use make_stepped_shaft(d1, L1, d2, L2, d3, L3).
+- "keyed shaft", "keyway", "key slot in the shaft"
+  ⇒ use make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth).
+- "flat bar with two holes", "link", "strap with holes at each end"
+  ⇒ use make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset).
+- "drum", "spool", "roller with flanges"
+  ⇒ use make_drum_with_flange(core_d, core_length, flange_d, flange_thickness,
+                               flange_count, bore_d).
+- "slot", "elongated hole", "long hole" in a plate
+  ⇒ use make_plate_with_slot(L, W, thickness, slot_width, edge_offset).
+- "pocket", "recess", "shallow cavity" on the top face of a plate
+  ⇒ use make_plate_with_pocket(L, W, thickness,
+                               pocket_length, pocket_width, pocket_depth).
+- Cylinder with a through or blind hole along the axis
+  ⇒ use make_cyl_with_hole(...), never plain make_cylinder for that case.
+- Circular flange with bolt circle / bolt holes
+  ⇒ use make_flange(...), not make_plate_with_hole(...).
+
+Gears:
+- If the description mentions a worm gear or screw gear,
+  ALWAYS use make_worm_gear(module, teeth, height, beta, diameter).
+- "spur gear" ⇒ make_spur_gear(module, teeth, width)
+- "helical gear" ⇒ make_helical_gear(module, teeth, width, helix_angle)
+- "internal gear" ⇒ make_internal_gear(module, teeth, thickness)
+- "bevel gear" ⇒ make_bevel_gear(module, teeth, height, beta)
+
+General rules:
 - Assume: 'import FreeCAD, Part' AND 'from cad_primitives import *' are already done.
 - DO NOT write any import or from statements.
 - DO NOT call any Part.* or FreeCAD.* functions (except Part.show(shape)).
-- If the description mentions a cylinder with a hole or depth, ALWAYS use
-  make_cyl_with_hole(...) and NEVER use make_cylinder(...) for that case.
-- If the description clearly refers to:
-    • rectangular tube / hollow box section / frame member ⇒ use make_rect_tube(...)
-    • pipe / hollow roller / tube with bore ⇒ use make_pipe(...)
-    • shaft with two or three diameters along its length ⇒ use make_stepped_shaft(...)
-    • keyed shaft / shaft with keyway ⇒ use make_shaft_with_keyway(...)
-    • flat bar or link with two end holes ⇒ use make_flat_bar_2holes(...)
-    • plate with a long slot (oblong hole) ⇒ use make_plate_with_slot(...)
-    • plate with a shallow rectangular recess / pocket ⇒ use make_plate_with_pocket(...)
-    • drum / spool / roller with flanges ⇒ use make_drum_with_flange(...)
-- If the description mentions a worm gear or screw gear, ALWAYS use
-  make_worm_gear(module, teeth, height, beta, diameter) and NEVER use
-  make_helical_gear or make_spur_gear for that case.
-- If the description mentions a spur gear, use make_spur_gear(module, teeth, width).
-- If it mentions a helical gear, use make_helical_gear(module, teeth, width, helix_angle).
-- If it mentions an internal gear, use make_internal_gear(module, teeth, thickness).
-- If it mentions a bevel gear, use make_bevel_gear(module, teeth, height, beta).
-
-Code formatting:
+- Always assume millimetres for dimensions when units are not stated.
+- If any parameter is not clearly given, choose a simple numeric default
+  (for example 10 or 5), but DO NOT pass None or leave arguments empty.
 - Create exactly ONE assignment:
     shape = <ONE allowed helper call with numeric arguments>
 - Then call exactly:
@@ -123,13 +136,15 @@ def _sanitize_code(raw: str) -> str:
         shape = <that_call>
         Part.show(shape)
     """
-    # remove imports and blanks
     useful = []
     for line in raw.splitlines():
         s = line.strip()
         if not s:
             continue
+        # drop imports, from, and code fences
         if s.startswith("import ") or s.startswith("from "):
+            continue
+        if s.startswith("```"):
             continue
         useful.append(s)
     text = " ".join(useful)
