@@ -27,6 +27,15 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    # new helpers
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
 )
 
 def main():
@@ -69,6 +78,14 @@ def main():
         "make_internal_gear": make_internal_gear,
         "make_bevel_gear": make_bevel_gear,
         "make_worm_gear": make_worm_gear,
+        "make_rect_tube": make_rect_tube,
+        "make_pipe": make_pipe,
+        "make_stepped_shaft": make_stepped_shaft,
+        "make_flat_bar_2holes": make_flat_bar_2holes,
+        "make_drum_with_flange": make_drum_with_flange,
+        "make_shaft_with_keyway": make_shaft_with_keyway,
+        "make_plate_with_slot": make_plate_with_slot,
+        "make_plate_with_pocket": make_plate_with_pocket,
     }
 
     exec(code, exec_globals, exec_globals)
