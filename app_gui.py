@@ -319,6 +319,18 @@ class TextToModelTab(QWidget):
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         l_layout.addWidget(self.hint_label)
 
+        # Help link: how to write good descriptions
+        tips_row = QHBoxLayout()
+        self.tips_btn = QPushButton("How to describe your part")
+        self.tips_btn.setFlat(True)
+        self.tips_btn.setStyleSheet(
+            "color: #60a5fa; text-decoration: underline; border: none; padding: 0;"
+        )
+        self.tips_btn.clicked.connect(self.show_prompt_help)
+        tips_row.addWidget(self.tips_btn)
+        tips_row.addStretch()
+        l_layout.addLayout(tips_row)
+
         splitter.addWidget(left)
 
         # -------- Right card --------
@@ -368,6 +380,10 @@ class TextToModelTab(QWidget):
 
     def insert_example(self):
         self.prompt_edit.setPlainText(self.example_combo.currentText())
+
+    def show_prompt_help(self):
+        dlg = PromptHelpDialog(self.main)
+        dlg.exec()
 
     def on_generate(self):
         if not self.main.freecad_available:
@@ -900,6 +916,57 @@ class ModelToDrawingTab(QWidget):
                     "Opening drawing in FreeCAD, please wait...", kind="success"
                 )
             os.startfile(str(self.drawing_path))
+
+
+# ---------- Prompt help dialog ----------
+
+class PromptHelpDialog(QDialog):
+    """Dialog with tips on how to describe parts for better results."""
+
+    def __init__(self, main: QMainWindow):
+        super().__init__(main)
+        self.setWindowTitle("How to describe your part")
+        self.setModal(True)
+        self.resize(520, 420)
+
+        layout = QVBoxLayout(self)
+
+        text = """
+<b>Guidelines for good part descriptions</b><br><br>
+1. <b>Start with the base shape</b><br>
+&nbsp;&nbsp;&nbsp;Examples: plate, block, cylinder, flange, bracket, gear, nut, bolt...<br><br>
+2. <b>Always give key dimensions in millimetres (mm)</b><br>
+&nbsp;&nbsp;&nbsp;• overall lengths / widths / heights<br>
+&nbsp;&nbsp;&nbsp;• diameters (outer, inner, holes)<br>
+&nbsp;&nbsp;&nbsp;• thicknesses and face widths<br><br>
+3. <b>For holes, specify:</b><br>
+&nbsp;&nbsp;&nbsp;• how many (e.g. 4 holes)<br>
+&nbsp;&nbsp;&nbsp;• diameter (e.g. 8mm holes)<br>
+&nbsp;&nbsp;&nbsp;• pattern/location<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– equally spaced on a 60mm bolt circle<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– 2 holes 50mm apart along the length<br><br>
+4. <b>Say where features are located</b><br>
+&nbsp;&nbsp;&nbsp;• centred, at one end, offset 10mm from an edge, etc.<br><br>
+5. <b>Avoid vague words</b> like "small", "large", "thin". Use numbers instead.<br><br>
+6. <b>If you want fillets or chamfers</b>, mention size and where<br>
+&nbsp;&nbsp;&nbsp;• e.g. 2mm fillet on all outer edges of the plate<br><br>
+<b>Example prompts</b><br>
+• a rectangular plate 100mm by 60mm, 8mm thick with a central hole of 20mm<br>
+• an L-shaped bracket with legs 40mm and 30mm, width 10mm and thickness 5mm<br>
+• a spur gear module 2 with 20 teeth and 10mm face width<br>
+• a circular flange outer 80mm, inner 40mm, 8mm thick with 6 bolt holes of 8mm on a 60mm bolt circle<br>
+"""
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
 
 
 # ---------- About dialog ----------
