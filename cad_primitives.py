@@ -270,6 +270,15 @@ def make_flange(outer_d, inner_d, thickness,
       - optional bolt circle with 'bolt_count' holes of diameter bolt_hole_d
         on a circle of diameter bolt_circle_d
     """
+    outer_d = float(outer_d)
+    inner_d = float(inner_d)
+    thickness = float(thickness)
+
+    # tolerate None / empty values produced by the AI
+    bolt_circle_d = 0.0 if bolt_circle_d in (None, "") else float(bolt_circle_d)
+    bolt_hole_d = 0.0 if bolt_hole_d in (None, "") else float(bolt_hole_d)
+    bolt_count = int(bolt_count or 0)
+
     r_out = outer_d / 2.0
     r_in = inner_d / 2.0
 
@@ -418,10 +427,11 @@ def make_drum_with_flange(core_d, core_length,
     bore_d : shaft bore diameter (0 => solid)
     """
     core_length = float(core_length)
-    core = Part.makeCylinder(float(core_d) / 2.0, core_length)
+    core_d = float(core_d)
+    core = Part.makeCylinder(core_d / 2.0, core_length)
 
-    flange_count = int(flange_count)
-    if flange_count >= 1 and flange_thickness > 0 and flange_d > 0:
+    flange_count = int(flange_count or 0)
+    if flange_count >= 1 and flange_thickness and flange_d:
         ft = float(flange_thickness)
         fd = float(flange_d) / 2.0
         flange1 = Part.makeCylinder(fd, ft, Vector(0, 0, 0))
@@ -434,7 +444,7 @@ def make_drum_with_flange(core_d, core_length,
 
     if bore_d and bore_d > 0:
         rb = float(bore_d) / 2.0
-        if rb >= float(core_d) / 2.0:
+        if rb >= core_d / 2.0:
             raise ValueError("bore_d must be smaller than core_d")
         bore = Part.makeCylinder(rb, core_length * 1.2,
                                  Vector(0, 0, -0.1 * core_length))
