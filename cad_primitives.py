@@ -225,25 +225,9 @@ def make_L_bracket(leg_x, leg_y, width, thickness, fillet_radius=0.0):
 
 def make_flange(outer_d, inner_d, thickness,
                 bolt_circle_d=0.0, bolt_hole_d=0.0, bolt_count=0):
-<<<<<<< HEAD
     outer_d = float(outer_d)
     inner_d = float(inner_d)
     thickness = float(thickness)
-=======
-    """
-    Circular flange:
-      - outer_d : outer diameter
-      - inner_d : inner (pipe) diameter
-      - thickness : plate thickness
-      - optional bolt circle with 'bolt_count' holes of diameter bolt_hole_d
-        on a circle of diameter bolt_circle_d
-    """
-    outer_d = float(outer_d)
-    inner_d = float(inner_d)
-    thickness = float(thickness)
-
-    # tolerate None / empty values produced by the AI
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     bolt_circle_d = 0.0 if bolt_circle_d in (None, "") else float(bolt_circle_d)
     bolt_hole_d = 0.0 if bolt_hole_d in (None, "") else float(bolt_hole_d)
     bolt_count = int(bolt_count or 0)
@@ -275,22 +259,10 @@ def make_flange(outer_d, inner_d, thickness,
 
 
 # -------------------------------------------------------------------
-<<<<<<< HEAD
 # Structural profiles and shafts
 # -------------------------------------------------------------------
 
 def make_rect_tube(length, width, height, wall_thickness=0.0):
-=======
-# Structural profiles and shafts (frames, rollers, links)
-# -------------------------------------------------------------------
-
-def make_rect_tube(length, width, height, wall_thickness=0.0):
-    """
-    Rectangular hollow section (RHS) or solid bar.
-    length = along X, cross‑section = width (Y) × height (Z).
-    If wall_thickness <= 0, returns a solid box.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     length = float(length)
     width = float(width)
     height = float(height)
@@ -312,15 +284,6 @@ def make_rect_tube(length, width, height, wall_thickness=0.0):
 
 
 def make_pipe(outer_d, inner_d, length):
-<<<<<<< HEAD
-=======
-    """
-    Hollow cylinder (pipe/roller).
-    outer_d : outer diameter
-    inner_d : inner diameter (0 or None => solid)
-    length  : along +Z
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     length = float(length)
     ro = float(outer_d) / 2.0
     ri = float(inner_d) / 2.0 if inner_d else 0.0
@@ -336,13 +299,6 @@ def make_pipe(outer_d, inner_d, length):
 
 
 def make_stepped_shaft(d1, L1, d2, L2, d3=None, L3=None):
-<<<<<<< HEAD
-=======
-    """
-    Coaxial shaft with 2 or 3 diameter steps along +Z.
-    d* = diameters, L* = lengths of each segment.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     d1 = float(d1); L1 = float(L1)
     d2 = float(d2); L2 = float(L2)
     if d1 <= 0 or d2 <= 0 or L1 <= 0 or L2 <= 0:
@@ -365,14 +321,6 @@ def make_stepped_shaft(d1, L1, d2, L2, d3=None, L3=None):
 
 
 def make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset):
-<<<<<<< HEAD
-=======
-    """
-    Flat bar with two through holes along its length.
-    Holes are centered in width and placed at 'edge_offset'
-    from each end.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     length = float(length)
     width = float(width)
     thickness = float(thickness)
@@ -404,16 +352,6 @@ def make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset):
 def make_drum_with_flange(core_d, core_length,
                           flange_d, flange_thickness,
                           flange_count=2, bore_d=0.0):
-<<<<<<< HEAD
-=======
-    """
-    Spool/drum: cylindrical core with 0,1,2 end flanges and optional bore.
-    core_d, core_length : diameter & length of central drum
-    flange_d, flange_thickness : flange diameter & thickness
-    flange_count : 0, 1, or 2 flanges
-    bore_d : shaft bore diameter (0 => solid)
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     core_length = float(core_length)
     core_d = float(core_d)
     core = Part.makeCylinder(core_d / 2.0, core_length)
@@ -442,13 +380,6 @@ def make_drum_with_flange(core_d, core_length,
 
 
 def make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth):
-<<<<<<< HEAD
-=======
-    """
-    Cylindrical shaft with a straight keyway cut along the top (parallel to axis).
-    Axis along +Z, base at Z=0.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     shaft_diameter = float(shaft_diameter)
     shaft_length = float(shaft_length)
     key_width = float(key_width)
@@ -462,38 +393,17 @@ def make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth):
     r = shaft_diameter / 2.0
     shaft = Part.makeCylinder(r, shaft_length)
 
-<<<<<<< HEAD
     slot_len = shaft_length * 1.2
     slot = Part.makeBox(
         key_width,
         key_depth,
         slot_len,
         Vector(-key_width / 2.0, r - key_depth, -0.1 * shaft_length),
-=======
-    # Rectangular slot along Z, on the +Y side of the shaft
-    slot_len = shaft_length * 1.2
-    slot = Part.makeBox(
-        key_width,                 # X direction
-        key_depth,                 # Y (radial) direction
-        slot_len,                  # Z (along shaft)
-        Vector(
-            -key_width / 2.0,      # center in X
-            r - key_depth,         # start at top region of cylinder
-            -0.1 * shaft_length,   # extend slightly beyond base/top
-        ),
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     )
     return shaft.cut(slot)
 
 
 def make_plate_with_slot(L, W, thickness, slot_width, edge_offset):
-<<<<<<< HEAD
-=======
-    """
-    Rectangular plate with ONE through slot along its length.
-    Slot is centered in width, leaves 'edge_offset' material at each end.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     L = float(L)
     W = float(W)
     thickness = float(thickness)
@@ -517,28 +427,13 @@ def make_plate_with_slot(L, W, thickness, slot_width, edge_offset):
         slot_length,
         slot_width,
         thickness * 1.2,
-<<<<<<< HEAD
         Vector(edge_offset, (W - slot_width) / 2.0, -0.1 * thickness),
-=======
-        Vector(
-            edge_offset,
-            (W - slot_width) / 2.0,
-            -0.1 * thickness,
-        ),
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     )
     return plate.cut(slot)
 
 
 def make_plate_with_pocket(L, W, thickness,
                            pocket_length, pocket_width, pocket_depth):
-<<<<<<< HEAD
-=======
-    """
-    Rectangular plate with a rectangular pocket (recess) on the top face,
-    centered in X and Y. Pocket does NOT go all the way through.
-    """
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
     L = float(L)
     W = float(W)
     thickness = float(thickness)
@@ -559,11 +454,7 @@ def make_plate_with_pocket(L, W, thickness,
 
     px = (L - pocket_length) / 2.0
     py = (W - pocket_width) / 2.0
-<<<<<<< HEAD
     pz = thickness - pocket_depth
-=======
-    pz = thickness - pocket_depth  # pocket starts below top surface
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
 
     pocket = Part.makeBox(
         pocket_length,
@@ -634,9 +525,4 @@ def make_bevel_gear(module, teeth, height, beta, *_, **__):
 
 
 def make_worm_gear(module, teeth, height, beta, diameter, *_, **__):
-<<<<<<< HEAD
     return _run_gear("worm", float(module), int(teeth), float(height), float(beta), float(diameter))
-=======
-    """Worm gear (non-parallel, non-intersecting)."""
-    return _run_gear("worm", float(module), int(teeth), float(height), float(beta), float(diameter))
->>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
