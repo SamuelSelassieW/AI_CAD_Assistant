@@ -297,6 +297,153 @@ def make_flange(outer_d, inner_d, thickness,
 
 
 # -------------------------------------------------------------------
+# Structural profiles and shafts (frames, rollers, links)
+# -------------------------------------------------------------------
+
+def make_rect_tube(length, width, height, wall_thickness=0.0):
+    """
+    Rectangular hollow section (RHS) or solid bar.
+    length = along X, cross‑section = width (Y) × height (Z).
+    If wall_thickness <= 0, returns a solid box.
+    """
+    length = float(length)
+    width = float(width)
+    height = float(height)
+    t = float(wall_thickness)
+
+    outer = Part.makeBox(length, width, height)
+    if t <= 0:
+        return outer
+    if width <= 2 * t or height <= 2 * t:
+        raise ValueError("wall_thickness too large for given width/height")
+
+    inner = Part.makeBox(
+        length,
+        width - 2 * t,
+        height - 2 * t,
+        Vector(0.0, t, t),
+    )
+    return outer.cut(inner)
+
+
+def make_pipe(outer_d, inner_d, length):
+    """
+    Hollow cylinder (pipe/roller).
+    outer_d : outer diameter
+    inner_d : inner diameter (0 or None => solid)
+    length  : along +Z
+    """
+    length = float(length)
+    ro = float(outer_d) / 2.0
+    ri = float(inner_d) / 2.0 if inner_d else 0.0
+
+    outer = Part.makeCylinder(ro, length)
+    if ri <= 0.0:
+        return outer
+    if ri >= ro:
+        raise ValueError("inner_d must be smaller than outer_d")
+
+    inner = Part.makeCylinder(ri, length * 1.2, Vector(0, 0, -0.1 * length))
+    return outer.cut(inner)
+
+
+def make_stepped_shaft(d1, L1, d2, L2, d3=None, L3=None):
+    """
+    Coaxial shaft with 2 or 3 diameter steps along +Z.
+    d* = diameters, L* = lengths of each segment.
+    """
+    d1 = float(d1); L1 = float(L1)
+    d2 = float(d2); L2 = float(L2)
+    if d1 <= 0 or d2 <= 0 or L1 <= 0 or L2 <= 0:
+        raise ValueError("d1,d2,L1,L2 must be > 0")
+
+    z = 0.0
+    shaft = Part.makeCylinder(d1 / 2.0, L1, Vector(0, 0, z))
+    z += L1
+    seg2 = Part.makeCylinder(d2 / 2.0, L2, Vector(0, 0, z))
+    shaft = shaft.fuse(seg2)
+    z += L2
+
+    if d3 is not None and L3 is not None:
+        d3 = float(d3); L3 = float(L3)
+        if d3 > 0 and L3 > 0:
+            seg3 = Part.makeCylinder(d3 / 2.0, L3, Vector(0, 0, z))
+            shaft = shaft.fuse(seg3)
+
+    return shaft
+
+
+def make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset):
+    """
+    Flat bar with two through holes along its length.
+    Holes are centered in width and placed at 'edge_offset'
+    from each end.
+    """
+    length = float(length)
+    width = float(width)
+    thickness = float(thickness)
+    hole_d = float(hole_d)
+    edge_offset = float(edge_offset)
+
+    plate = Part.makeBox(length, width, thickness)
+    if hole_d <= 0:
+        return plate
+    if edge_offset <= 0 or edge_offset >= length / 2.0:
+        raise ValueError("edge_offset must be >0 and < length/2")
+
+    r = hole_d / 2.0
+    z0 = -0.1 * thickness
+    h = thickness * 1.2
+
+    hole1 = Part.makeCylinder(
+        r, h,
+        Vector(edge_offset, width / 2.0, z0),
+    )
+    hole2 = Part.makeCylinder(
+        r, h,
+        Vector(length - edge_offset, width / 2.0, z0),
+    )
+    holes = hole1.fuse(hole2)
+    return plate.cut(holes)
+
+
+def make_drum_with_flange(core_d, core_length,
+                          flange_d, flange_thickness,
+                          flange_count=2, bore_d=0.0):
+    """
+    Spool/drum: cylindrical core with 0,1,2 end flanges and optional bore.
+    core_d, core_length : diameter & length of central drum
+    flange_d, flange_thickness : flange diameter & thickness
+    flange_count : 0, 1, or 2 flanges
+    bore_d : shaft bore diameter (0 => solid)
+    """
+    core_length = float(core_length)
+    core = Part.makeCylinder(float(core_d) / 2.0, core_length)
+
+    flange_count = int(flange_count)
+    if flange_count >= 1 and flange_thickness > 0 and flange_d > 0:
+        ft = float(flange_thickness)
+        fd = float(flange_d) / 2.0
+        flange1 = Part.makeCylinder(fd, ft, Vector(0, 0, 0))
+        drum = core.fuse(flange1)
+        if flange_count >= 2:
+            flange2 = Part.makeCylinder(fd, ft, Vector(0, 0, core_length - ft))
+            drum = drum.fuse(flange2)
+    else:
+        drum = core
+
+    if bore_d and bore_d > 0:
+        rb = float(bore_d) / 2.0
+        if rb >= float(core_d) / 2.0:
+            raise ValueError("bore_d must be smaller than core_d")
+        bore = Part.makeCylinder(rb, core_length * 1.2,
+                                 Vector(0, 0, -0.1 * core_length))
+        drum = drum.cut(bore)
+
+    return drum
+
+
+# -------------------------------------------------------------------
 # Gears (via external freecadcmd script)
 # -------------------------------------------------------------------
 
