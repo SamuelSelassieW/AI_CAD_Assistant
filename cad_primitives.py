@@ -10,21 +10,16 @@ from FreeCAD import Vector
 # Paths / environment
 # -------------------------------------------------------------------
 
-# Path to FreeCAD's command-line executable
 FREECADCMD = r"C:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe"
 
-# When frozen (PyInstaller), use the folder that contains the .exe.
-# When running from source, use the folder that contains this file.
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).parent
 else:
     BASE_DIR = Path(__file__).parent
 
-# Where the helper scripts live (packaged next to the .exe)
 _FAST_BOLT_SCRIPT = BASE_DIR / "fasteners_bolt_script.py"
 _GEAR_SCRIPT = BASE_DIR / "gears_script.py"
 
-# Shared folder for generated .FCStd templates (bolts, gears, etc.)
 _GENERATED_DIR = BASE_DIR / "generated_models"
 _GENERATED_DIR.mkdir(exist_ok=True)
 
@@ -34,25 +29,13 @@ _GENERATED_DIR.mkdir(exist_ok=True)
 # -------------------------------------------------------------------
 
 def make_fasteners_hex_bolt(size, length):
-    """
-    Hex bolt using the Fasteners workbench when running from source,
-    or a built‑in approximate hex bolt when running from the packaged .exe.
-
-    size  : e.g. 4, 8, "M8"
-    length: shaft length in mm
-    """
-
-    # normalize inputs
     if isinstance(size, (int, float)):
         size_str = f"M{int(size)}"
     else:
         size_str = str(size)
     length_mm = float(length)
 
-    # --- CASE 1: running from the PyInstaller .exe -----------------
-    # sys.frozen is True only inside the packaged executable.
     if getattr(sys, "frozen", False):
-        # Derive a nominal diameter d from the size string (e.g. "M8" -> 8.0)
         s = size_str.upper()
         if s.startswith("M"):
             try:
@@ -67,16 +50,10 @@ def make_fasteners_hex_bolt(size, length):
 
         shaft_radius = d / 2.0
         shaft_length = length_mm
-
-        # Rough proportions for a hex head
-        head_flat = 1.5 * d       # across flats
-        head_thickness = 0.6 * d  # head height
-
-        # Use our own simple hex‑bolt geometry (no external FreeCAD process)
+        head_flat = 1.5 * d
+        head_thickness = 0.6 * d
         return make_hex_bolt(shaft_radius, shaft_length, head_flat, head_thickness)
 
-    # --- CASE 2: running from source (normal Python) ----------------
-    # Keep the existing behavior: use freecadcmd + Fasteners script.
     out_dir = _GENERATED_DIR
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"fast_bolt_{size_str}_{int(length_mm)}.FCStd"
@@ -122,10 +99,6 @@ def make_cylinder(radius, height):
 
 def make_cyl_with_hole(outer_radius, height,
                        hole_radius, hole_depth=None, depth=None):
-    """
-    Solid cylinder with a coaxial cylindrical hole.
-    You may pass hole_depth=... or depth=... (both mean the same).
-    """
     if hole_depth is None and depth is not None:
         hole_depth = depth
     if hole_depth is None:
@@ -137,10 +110,6 @@ def make_cyl_with_hole(outer_radius, height,
 
 
 def make_tri_prism(base, height, thickness):
-    """
-    Right triangle in XY plane, extruded along +Z by 'thickness'.
-    base along X, height along Y.
-    """
     p1 = Vector(0, 0, 0)
     p2 = Vector(base, 0, 0)
     p3 = Vector(base / 2.0, height, 0)
@@ -154,11 +123,11 @@ def make_tri_prism(base, height, thickness):
 def make_plate_with_hole(L, W, thickness, hole_radius):
     plate = Part.makeBox(L, W, thickness)
     if hole_radius is None or hole_radius <= 0:
-        return plate  # no hole rather than a FreeCAD error
+        return plate
     hole = Part.makeCylinder(
         hole_radius,
         thickness * 1.2,
-        FreeCAD.Vector(L / 2.0, W / 2.0, -thickness * 0.1),
+        Vector(L / 2.0, W / 2.0, -thickness * 0.1),
     )
     return plate.cut(hole)
 
@@ -168,8 +137,7 @@ def make_plate_with_hole(L, W, thickness, hole_radius):
 # -------------------------------------------------------------------
 
 def make_hex_prism(flat, thickness):
-    """Regular hex prism; 'flat' = across-flats size."""
-    r = flat / (3 ** 0.5)  # circumradius
+    r = flat / (3 ** 0.5)
     pts = [Vector(r * math.cos(math.radians(a)),
                   r * math.sin(math.radians(a)), 0)
            for a in range(0, 360, 60)]
@@ -243,11 +211,6 @@ def make_socket_head_screw(shaft_diameter, shaft_length, head_diameter, head_hei
 
 
 def make_L_bracket(leg_x, leg_y, width, thickness, fillet_radius=0.0):
-    """
-    L‑bracket made from two rectangular plates:
-      leg_x × width × thickness  and  width × leg_y × thickness
-    sharing a corner at the origin.
-    """
     leg1 = Part.makeBox(leg_x, width, thickness)
     leg2 = Part.makeBox(width, leg_y, thickness)
     bracket = leg1.fuse(leg2)
@@ -262,6 +225,11 @@ def make_L_bracket(leg_x, leg_y, width, thickness, fillet_radius=0.0):
 
 def make_flange(outer_d, inner_d, thickness,
                 bolt_circle_d=0.0, bolt_hole_d=0.0, bolt_count=0):
+<<<<<<< HEAD
+    outer_d = float(outer_d)
+    inner_d = float(inner_d)
+    thickness = float(thickness)
+=======
     """
     Circular flange:
       - outer_d : outer diameter
@@ -270,6 +238,16 @@ def make_flange(outer_d, inner_d, thickness,
       - optional bolt circle with 'bolt_count' holes of diameter bolt_hole_d
         on a circle of diameter bolt_circle_d
     """
+    outer_d = float(outer_d)
+    inner_d = float(inner_d)
+    thickness = float(thickness)
+
+    # tolerate None / empty values produced by the AI
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    bolt_circle_d = 0.0 if bolt_circle_d in (None, "") else float(bolt_circle_d)
+    bolt_hole_d = 0.0 if bolt_hole_d in (None, "") else float(bolt_hole_d)
+    bolt_count = int(bolt_count or 0)
+
     r_out = outer_d / 2.0
     r_in = inner_d / 2.0
 
@@ -297,16 +275,310 @@ def make_flange(outer_d, inner_d, thickness,
 
 
 # -------------------------------------------------------------------
+<<<<<<< HEAD
+# Structural profiles and shafts
+# -------------------------------------------------------------------
+
+def make_rect_tube(length, width, height, wall_thickness=0.0):
+=======
+# Structural profiles and shafts (frames, rollers, links)
+# -------------------------------------------------------------------
+
+def make_rect_tube(length, width, height, wall_thickness=0.0):
+    """
+    Rectangular hollow section (RHS) or solid bar.
+    length = along X, cross‑section = width (Y) × height (Z).
+    If wall_thickness <= 0, returns a solid box.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    length = float(length)
+    width = float(width)
+    height = float(height)
+    t = float(wall_thickness)
+
+    outer = Part.makeBox(length, width, height)
+    if t <= 0:
+        return outer
+    if width <= 2 * t or height <= 2 * t:
+        raise ValueError("wall_thickness too large for given width/height")
+
+    inner = Part.makeBox(
+        length,
+        width - 2 * t,
+        height - 2 * t,
+        Vector(0.0, t, t),
+    )
+    return outer.cut(inner)
+
+
+def make_pipe(outer_d, inner_d, length):
+<<<<<<< HEAD
+=======
+    """
+    Hollow cylinder (pipe/roller).
+    outer_d : outer diameter
+    inner_d : inner diameter (0 or None => solid)
+    length  : along +Z
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    length = float(length)
+    ro = float(outer_d) / 2.0
+    ri = float(inner_d) / 2.0 if inner_d else 0.0
+
+    outer = Part.makeCylinder(ro, length)
+    if ri <= 0.0:
+        return outer
+    if ri >= ro:
+        raise ValueError("inner_d must be smaller than outer_d")
+
+    inner = Part.makeCylinder(ri, length * 1.2, Vector(0, 0, -0.1 * length))
+    return outer.cut(inner)
+
+
+def make_stepped_shaft(d1, L1, d2, L2, d3=None, L3=None):
+<<<<<<< HEAD
+=======
+    """
+    Coaxial shaft with 2 or 3 diameter steps along +Z.
+    d* = diameters, L* = lengths of each segment.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    d1 = float(d1); L1 = float(L1)
+    d2 = float(d2); L2 = float(L2)
+    if d1 <= 0 or d2 <= 0 or L1 <= 0 or L2 <= 0:
+        raise ValueError("d1,d2,L1,L2 must be > 0")
+
+    z = 0.0
+    shaft = Part.makeCylinder(d1 / 2.0, L1, Vector(0, 0, z))
+    z += L1
+    seg2 = Part.makeCylinder(d2 / 2.0, L2, Vector(0, 0, z))
+    shaft = shaft.fuse(seg2)
+    z += L2
+
+    if d3 is not None and L3 is not None:
+        d3 = float(d3); L3 = float(L3)
+        if d3 > 0 and L3 > 0:
+            seg3 = Part.makeCylinder(d3 / 2.0, L3, Vector(0, 0, z))
+            shaft = shaft.fuse(seg3)
+
+    return shaft
+
+
+def make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset):
+<<<<<<< HEAD
+=======
+    """
+    Flat bar with two through holes along its length.
+    Holes are centered in width and placed at 'edge_offset'
+    from each end.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    length = float(length)
+    width = float(width)
+    thickness = float(thickness)
+    hole_d = float(hole_d)
+    edge_offset = float(edge_offset)
+
+    plate = Part.makeBox(length, width, thickness)
+    if hole_d <= 0:
+        return plate
+    if edge_offset <= 0 or edge_offset >= length / 2.0:
+        raise ValueError("edge_offset must be >0 and < length/2")
+
+    r = hole_d / 2.0
+    z0 = -0.1 * thickness
+    h = thickness * 1.2
+
+    hole1 = Part.makeCylinder(
+        r, h,
+        Vector(edge_offset, width / 2.0, z0),
+    )
+    hole2 = Part.makeCylinder(
+        r, h,
+        Vector(length - edge_offset, width / 2.0, z0),
+    )
+    holes = hole1.fuse(hole2)
+    return plate.cut(holes)
+
+
+def make_drum_with_flange(core_d, core_length,
+                          flange_d, flange_thickness,
+                          flange_count=2, bore_d=0.0):
+<<<<<<< HEAD
+=======
+    """
+    Spool/drum: cylindrical core with 0,1,2 end flanges and optional bore.
+    core_d, core_length : diameter & length of central drum
+    flange_d, flange_thickness : flange diameter & thickness
+    flange_count : 0, 1, or 2 flanges
+    bore_d : shaft bore diameter (0 => solid)
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    core_length = float(core_length)
+    core_d = float(core_d)
+    core = Part.makeCylinder(core_d / 2.0, core_length)
+
+    flange_count = int(flange_count or 0)
+    if flange_count >= 1 and flange_thickness and flange_d:
+        ft = float(flange_thickness)
+        fd = float(flange_d) / 2.0
+        flange1 = Part.makeCylinder(fd, ft, Vector(0, 0, 0))
+        drum = core.fuse(flange1)
+        if flange_count >= 2:
+            flange2 = Part.makeCylinder(fd, ft, Vector(0, 0, core_length - ft))
+            drum = drum.fuse(flange2)
+    else:
+        drum = core
+
+    if bore_d and bore_d > 0:
+        rb = float(bore_d) / 2.0
+        if rb >= core_d / 2.0:
+            raise ValueError("bore_d must be smaller than core_d")
+        bore = Part.makeCylinder(rb, core_length * 1.2,
+                                 Vector(0, 0, -0.1 * core_length))
+        drum = drum.cut(bore)
+
+    return drum
+
+
+def make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth):
+<<<<<<< HEAD
+=======
+    """
+    Cylindrical shaft with a straight keyway cut along the top (parallel to axis).
+    Axis along +Z, base at Z=0.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    shaft_diameter = float(shaft_diameter)
+    shaft_length = float(shaft_length)
+    key_width = float(key_width)
+    key_depth = float(key_depth)
+
+    if shaft_diameter <= 0 or shaft_length <= 0:
+        raise ValueError("shaft_diameter and shaft_length must be > 0")
+    if key_width <= 0 or key_depth <= 0:
+        raise ValueError("key_width and key_depth must be > 0")
+
+    r = shaft_diameter / 2.0
+    shaft = Part.makeCylinder(r, shaft_length)
+
+<<<<<<< HEAD
+    slot_len = shaft_length * 1.2
+    slot = Part.makeBox(
+        key_width,
+        key_depth,
+        slot_len,
+        Vector(-key_width / 2.0, r - key_depth, -0.1 * shaft_length),
+=======
+    # Rectangular slot along Z, on the +Y side of the shaft
+    slot_len = shaft_length * 1.2
+    slot = Part.makeBox(
+        key_width,                 # X direction
+        key_depth,                 # Y (radial) direction
+        slot_len,                  # Z (along shaft)
+        Vector(
+            -key_width / 2.0,      # center in X
+            r - key_depth,         # start at top region of cylinder
+            -0.1 * shaft_length,   # extend slightly beyond base/top
+        ),
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    )
+    return shaft.cut(slot)
+
+
+def make_plate_with_slot(L, W, thickness, slot_width, edge_offset):
+<<<<<<< HEAD
+=======
+    """
+    Rectangular plate with ONE through slot along its length.
+    Slot is centered in width, leaves 'edge_offset' material at each end.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    L = float(L)
+    W = float(W)
+    thickness = float(thickness)
+    slot_width = float(slot_width)
+    edge_offset = float(edge_offset)
+
+    if L <= 0 or W <= 0 or thickness <= 0:
+        raise ValueError("L, W, thickness must be > 0")
+    if slot_width <= 0:
+        raise ValueError("slot_width must be > 0")
+    if edge_offset <= 0 or edge_offset >= L / 2.0:
+        raise ValueError("edge_offset must be > 0 and < L/2")
+
+    plate = Part.makeBox(L, W, thickness)
+
+    slot_length = L - 2.0 * edge_offset
+    if slot_length <= 0:
+        raise ValueError("slot_length became <= 0; check edge_offset and L")
+
+    slot = Part.makeBox(
+        slot_length,
+        slot_width,
+        thickness * 1.2,
+<<<<<<< HEAD
+        Vector(edge_offset, (W - slot_width) / 2.0, -0.1 * thickness),
+=======
+        Vector(
+            edge_offset,
+            (W - slot_width) / 2.0,
+            -0.1 * thickness,
+        ),
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    )
+    return plate.cut(slot)
+
+
+def make_plate_with_pocket(L, W, thickness,
+                           pocket_length, pocket_width, pocket_depth):
+<<<<<<< HEAD
+=======
+    """
+    Rectangular plate with a rectangular pocket (recess) on the top face,
+    centered in X and Y. Pocket does NOT go all the way through.
+    """
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+    L = float(L)
+    W = float(W)
+    thickness = float(thickness)
+    pocket_length = float(pocket_length)
+    pocket_width = float(pocket_width)
+    pocket_depth = float(pocket_depth)
+
+    if L <= 0 or W <= 0 or thickness <= 0:
+        raise ValueError("L, W, thickness must be > 0")
+    if pocket_length <= 0 or pocket_width <= 0 or pocket_depth <= 0:
+        raise ValueError("Pocket dimensions must be > 0")
+    if pocket_length >= L or pocket_width >= W:
+        raise ValueError("Pocket must be smaller than plate in X/Y")
+    if pocket_depth >= thickness:
+        raise ValueError("pocket_depth must be < thickness")
+
+    plate = Part.makeBox(L, W, thickness)
+
+    px = (L - pocket_length) / 2.0
+    py = (W - pocket_width) / 2.0
+<<<<<<< HEAD
+    pz = thickness - pocket_depth
+=======
+    pz = thickness - pocket_depth  # pocket starts below top surface
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
+
+    pocket = Part.makeBox(
+        pocket_length,
+        pocket_width,
+        pocket_depth,
+        Vector(px, py, pz),
+    )
+    return plate.cut(pocket)
+
+
+# -------------------------------------------------------------------
 # Gears (via external freecadcmd script)
 # -------------------------------------------------------------------
 
 def _run_gear(kind, *params, name="gear"):
-    """
-    Use external freecadcmd + gears_script.py to generate gears
-    when running from source. In the packaged .exe we raise a clear
-    error instead of failing deep inside FreeCAD.
-    """
-    # In the .exe, don't attempt to run external scripts; it's fragile.
     if getattr(sys, "frozen", False):
         raise OSError(
             "Gear generation via gears_script.py is not available in the "
@@ -346,25 +618,25 @@ def _run_gear(kind, *params, name="gear"):
 
 
 def make_spur_gear(module, teeth, width, *_, **__):
-    """Parallel spur gear."""
     return _run_gear("spur", float(module), int(teeth), float(width))
 
 
 def make_helical_gear(module, teeth, width, helix_angle, *_, **__):
-    """Parallel helical gear."""
     return _run_gear("helical", float(module), int(teeth), float(width), float(helix_angle))
 
 
 def make_internal_gear(module, teeth, thickness, *_, **__):
-    """Internal involute gear."""
     return _run_gear("internal", float(module), int(teeth), float(thickness))
 
 
 def make_bevel_gear(module, teeth, height, beta, *_, **__):
-    """Bevel gear (intersecting shafts)."""
     return _run_gear("bevel", float(module), int(teeth), float(height), float(beta))
 
 
 def make_worm_gear(module, teeth, height, beta, diameter, *_, **__):
+<<<<<<< HEAD
+    return _run_gear("worm", float(module), int(teeth), float(height), float(beta), float(diameter))
+=======
     """Worm gear (non-parallel, non-intersecting)."""
     return _run_gear("worm", float(module), int(teeth), float(height), float(beta), float(diameter))
+>>>>>>> 8ac81b82859ffd65fc6b7ccb84be0b69e880639c
