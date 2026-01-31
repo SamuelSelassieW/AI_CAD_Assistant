@@ -1,5 +1,6 @@
 import os
 import pathlib
+
 import FreeCAD, Part
 from cad_code_ai_local import generate_cad_code
 from cad_primitives import (
@@ -16,12 +17,21 @@ from cad_primitives import (
     make_cross_screw,
     make_socket_head_screw,
     make_fasteners_hex_bolt,
-    make flange,
+    make_flange,
     make_spur_gear,
     make_helical_gear,
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    # new helpers
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
 )
 
 
@@ -48,7 +58,7 @@ def main():
         "Part": _SafePart,
         "make_box": make_box,
         "make_cylinder": make_cylinder,
-	"make_cyl_with_hole": make_cyl_with_hole,
+        "make_cyl_with_hole": make_cyl_with_hole,
         "make_tri_prism": make_tri_prism,
         "make_plate_with_hole": make_plate_with_hole,
         "make_hex_prism": make_hex_prism,
@@ -65,6 +75,14 @@ def main():
         "make_internal_gear": make_internal_gear,
         "make_bevel_gear": make_bevel_gear,
         "make_worm_gear": make_worm_gear,
+        "make_rect_tube": make_rect_tube,
+        "make_pipe": make_pipe,
+        "make_stepped_shaft": make_stepped_shaft,
+        "make_flat_bar_2holes": make_flat_bar_2holes,
+        "make_drum_with_flange": make_drum_with_flange,
+        "make_shaft_with_keyway": make_shaft_with_keyway,
+        "make_plate_with_slot": make_plate_with_slot,
+        "make_plate_with_pocket": make_plate_with_pocket,
     }
 
     exec(code, exec_globals, {})
