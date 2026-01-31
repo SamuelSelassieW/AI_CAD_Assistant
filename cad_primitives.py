@@ -443,6 +443,113 @@ def make_drum_with_flange(core_d, core_length,
     return drum
 
 
+def make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth):
+    """
+    Cylindrical shaft with a straight keyway cut along the top (parallel to axis).
+    Axis along +Z, base at Z=0.
+    """
+    shaft_diameter = float(shaft_diameter)
+    shaft_length = float(shaft_length)
+    key_width = float(key_width)
+    key_depth = float(key_depth)
+
+    if shaft_diameter <= 0 or shaft_length <= 0:
+        raise ValueError("shaft_diameter and shaft_length must be > 0")
+    if key_width <= 0 or key_depth <= 0:
+        raise ValueError("key_width and key_depth must be > 0")
+
+    r = shaft_diameter / 2.0
+    shaft = Part.makeCylinder(r, shaft_length)
+
+    # Rectangular slot along Z, on the +Y side of the shaft
+    slot_len = shaft_length * 1.2
+    slot = Part.makeBox(
+        key_width,                 # X direction
+        key_depth,                 # Y (radial) direction
+        slot_len,                  # Z (along shaft)
+        Vector(
+            -key_width / 2.0,      # center in X
+            r - key_depth,         # start at top region of cylinder
+            -0.1 * shaft_length,   # extend slightly beyond base/top
+        ),
+    )
+    return shaft.cut(slot)
+
+
+def make_plate_with_slot(L, W, thickness, slot_width, edge_offset):
+    """
+    Rectangular plate with ONE through slot along its length.
+    Slot is centered in width, leaves 'edge_offset' material at each end.
+    """
+    L = float(L)
+    W = float(W)
+    thickness = float(thickness)
+    slot_width = float(slot_width)
+    edge_offset = float(edge_offset)
+
+    if L <= 0 or W <= 0 or thickness <= 0:
+        raise ValueError("L, W, thickness must be > 0")
+    if slot_width <= 0:
+        raise ValueError("slot_width must be > 0")
+    if edge_offset <= 0 or edge_offset >= L / 2.0:
+        raise ValueError("edge_offset must be > 0 and < L/2")
+
+    plate = Part.makeBox(L, W, thickness)
+
+    slot_length = L - 2.0 * edge_offset
+    if slot_length <= 0:
+        raise ValueError("slot_length became <= 0; check edge_offset and L")
+
+    slot = Part.makeBox(
+        slot_length,
+        slot_width,
+        thickness * 1.2,
+        Vector(
+            edge_offset,
+            (W - slot_width) / 2.0,
+            -0.1 * thickness,
+        ),
+    )
+    return plate.cut(slot)
+
+
+def make_plate_with_pocket(L, W, thickness,
+                           pocket_length, pocket_width, pocket_depth):
+    """
+    Rectangular plate with a rectangular pocket (recess) on the top face,
+    centered in X and Y. Pocket does NOT go all the way through.
+    """
+    L = float(L)
+    W = float(W)
+    thickness = float(thickness)
+    pocket_length = float(pocket_length)
+    pocket_width = float(pocket_width)
+    pocket_depth = float(pocket_depth)
+
+    if L <= 0 or W <= 0 or thickness <= 0:
+        raise ValueError("L, W, thickness must be > 0")
+    if pocket_length <= 0 or pocket_width <= 0 or pocket_depth <= 0:
+        raise ValueError("Pocket dimensions must be > 0")
+    if pocket_length >= L or pocket_width >= W:
+        raise ValueError("Pocket must be smaller than plate in X/Y")
+    if pocket_depth >= thickness:
+        raise ValueError("pocket_depth must be < thickness")
+
+    plate = Part.makeBox(L, W, thickness)
+
+    px = (L - pocket_length) / 2.0
+    py = (W - pocket_width) / 2.0
+    pz = thickness - pocket_depth  # pocket starts below top surface
+
+    pocket = Part.makeBox(
+        pocket_length,
+        pocket_width,
+        pocket_depth,
+        Vector(px, py, pz),
+    )
+    return plate.cut(pocket)
+
+
 # -------------------------------------------------------------------
 # Gears (via external freecadcmd script)
 # -------------------------------------------------------------------
