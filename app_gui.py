@@ -413,7 +413,7 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
-        # Simple ambiguity check for gears (before calling the AI)
+        # --- gear ambiguity check BEFORE calling the AI --------------------
         desc_norm = desc.lower()
         if "gear" in desc_norm:
             has_type = any(
@@ -432,6 +432,7 @@ class TextToModelTab(QWidget):
                 if hasattr(self.main, "toast"):
                     self.main.toast.show_message(msg, kind="error")
                 return
+        # -------------------------------------------------------------------
 
         logger.info("Text → Model generation started. Description: %s", desc)
 
