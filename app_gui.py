@@ -21,7 +21,7 @@ def setup_freecad_env():
       - insert lib/ at the *front* of sys.path so we prefer the system FreeCAD
         over any partially-bundled copy inside _internal.
     """
-    candidates: list[Path] = []
+    candidates: list[Path] = []    
 
     # If user has a custom FreeCAD path in env vars, prefer that
     env_home = (
