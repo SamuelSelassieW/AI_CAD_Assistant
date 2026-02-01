@@ -127,7 +127,11 @@ except Exception as e:
     FREECAD_ERROR = str(e)
     logger.warning("FreeCAD import FAILED: %s", FREECAD_ERROR)
 
-from cad_code_ai_local import generate_cad_code
+from cad_code_ai_local import (
+    generate_cad_code,
+    AmbiguousPartError,
+    UnsupportedPartError,
+)
 from cad_primitives import (
     make_box,
     make_cylinder,
@@ -421,8 +425,6 @@ class TextToModelTab(QWidget):
             code = generate_cad_code(desc)
             self.code_view.setPlainText(code)
 
-            # In the frozen .exe, use external freecadcmd to avoid embedded
-            # FreeCAD GUI/material issues. In normal Python, use embedded FreeCAD.
             if getattr(sys, "frozen", False):
                 self._generate_via_freecadcmd(code)
             else:
@@ -432,6 +434,27 @@ class TextToModelTab(QWidget):
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
+
+        except AmbiguousPartError as e:
+            msg = str(e) or (
+                "Part not well defined. Please specify the gear type "
+                "(spur, helical, bevel, worm, internal)."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Part not well defined", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
+
+        except UnsupportedPartError as e:
+            msg = str(e) or (
+                "Object not found in library; can't generate this figure for now."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Object not found", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
 
         except Exception as e:
             logger.exception("Error generating model from text.")
@@ -569,8 +592,8 @@ from cad_primitives import (
 )
 
 doc = FreeCAD.newDocument("AIModel")
-
-class _SafePart:
+                                
+class _SafePart:            
     @staticmethod
     def show(shape):
         obj = doc.addObject("Part::Feature", "AI_Shape")
