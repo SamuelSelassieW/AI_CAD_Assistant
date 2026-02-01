@@ -21,7 +21,7 @@ def setup_freecad_env():
       - insert lib/ at the *front* of sys.path so we prefer the system FreeCAD
         over any partially-bundled copy inside _internal.
     """
-    candidates: list[Path] = []
+    candidates: list[Path] = []    
 
     # If user has a custom FreeCAD path in env vars, prefer that
     env_home = (
@@ -127,7 +127,11 @@ except Exception as e:
     FREECAD_ERROR = str(e)
     logger.warning("FreeCAD import FAILED: %s", FREECAD_ERROR)
 
-from cad_code_ai_local import generate_cad_code
+from cad_code_ai_local import (
+    generate_cad_code,
+    AmbiguousPartError,
+    UnsupportedPartError,
+)
 from cad_primitives import (
     make_box,
     make_cylinder,
@@ -409,6 +413,27 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
+        # --- gear ambiguity check BEFORE calling the AI --------------------
+        desc_norm = desc.lower()
+        if "gear" in desc_norm:
+            has_type = any(
+                w in desc_norm
+                for w in ["spur", "helical", "worm", "screw gear", "bevel", "internal"]
+            )
+            if not has_type:
+                msg = (
+                    "Part not well defined. Please specify the gear type "
+                    "(spur, helical, bevel, worm, internal).\n"
+                    'Example: "spur gear module 2 with 20 teeth and 10mm width".'
+                )
+                self.code_view.setPlainText(msg)
+                QMessageBox.information(self, "Part not well defined", msg)
+                self.main.statusBar().showMessage(msg, 8000)
+                if hasattr(self.main, "toast"):
+                    self.main.toast.show_message(msg, kind="error")
+                return
+        # -------------------------------------------------------------------
+
         logger.info("Text → Model generation started. Description: %s", desc)
 
         self.generate_btn.setEnabled(False)
@@ -421,8 +446,6 @@ class TextToModelTab(QWidget):
             code = generate_cad_code(desc)
             self.code_view.setPlainText(code)
 
-            # In the frozen .exe, use external freecadcmd to avoid embedded
-            # FreeCAD GUI/material issues. In normal Python, use embedded FreeCAD.
             if getattr(sys, "frozen", False):
                 self._generate_via_freecadcmd(code)
             else:
@@ -432,6 +455,27 @@ class TextToModelTab(QWidget):
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
+
+        except AmbiguousPartError as e:
+            msg = str(e) or (
+                "Part not well defined. Please specify the gear type "
+                "(spur, helical, bevel, worm, internal)."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Part not well defined", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
+
+        except UnsupportedPartError as e:
+            msg = str(e) or (
+                "Object not found in library; can't generate this figure for now."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Object not found", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
 
         except Exception as e:
             logger.exception("Error generating model from text.")
@@ -569,8 +613,8 @@ from cad_primitives import (
 )
 
 doc = FreeCAD.newDocument("AIModel")
-
-class _SafePart:
+                                
+class _SafePart:            
     @staticmethod
     def show(shape):
         obj = doc.addObject("Part::Feature", "AI_Shape")
