@@ -33,19 +33,52 @@ ALLOWED_HELPERS = [
     "make_plate_with_pocket",
 ]
 
+
+class AmbiguousPartError(Exception):
+    """Prompt mentions a supported class (e.g. gear) but is not specific enough."""
+    pass
+
+
+class UnsupportedPartError(Exception):
+    """Prompt describes something not in our helper library."""
+    pass
+
+
 SYSTEM_PROMPT = """
 You generate STRICT Python code to build ONE 3D solid using helper functions
 from cad_primitives, then display it.
 
-User descriptions may:
-- be very short or ungrammatical,
-- mix upper/lower case,
-- contain spelling mistakes.
-You must ignore grammar and casing and focus on:
-- the type of part (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, etc.)
+User descriptions may be short, ungrammatical, or contain spelling mistakes.
+Ignore grammar and casing; focus on:
+- the part type (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, etc.)
 - all numeric dimensions.
 
-Treat upper/lower case as identical.
+VERY IMPORTANT – BEFORE writing code:
+
+1) If the prompt is clearly about a gear but the type is not specified
+   (no words spur / helical / bevel / internal / worm / screw gear),
+   then DO NOT write any Python code.
+   Instead, output exactly one line:
+
+   ASK_GEAR_TYPE: <very short helpful message to the user>
+
+   Example of such a message:
+   ASK_GEAR_TYPE: Part not well defined. Please specify the gear type \
+(spur, helical, bevel, worm, internal). Example: "spur gear module 2 \
+with 20 teeth and 10mm width".
+
+2) If the prompt cannot reasonably be mapped to ANY of the allowed helpers
+   (object not in our library), DO NOT write any Python code.
+   Instead, output exactly one line:
+
+   UNSUPPORTED_PART: <very short helpful message to the user>
+
+   Example:
+   UNSUPPORTED_PART: Object not found in library; can't generate this \
+figure for now.
+
+Only if you CAN choose an appropriate helper function, then you generate code
+as described below.
 
 Allowed helper calls (already imported for you):
 - make_box(L, W, H)
@@ -81,29 +114,29 @@ Allowed helper calls (already imported for you):
 - make_plate_with_pocket(L, W, thickness,
                          pocket_length, pocket_width, pocket_depth)
 
-Mapping from noisy descriptions to helpers:
-- Words like "rectangular tube", "box tube", "hollow section", "frame member"
-  ⇒ use make_rect_tube(length, width, height, wall_thickness).
-- Words like "pipe", "tube", "roller", "hollow cylinder" or outer + inner diameters
-  ⇒ use make_pipe(outer_d, inner_d, length).
+Mapping from descriptions to helpers (when you DO generate code):
+- "rectangular tube", "box tube", "hollow section", "frame member"
+  ⇒ make_rect_tube(length, width, height, wall_thickness).
+- "pipe", "tube", "roller", "hollow cylinder" or outer + inner diameters
+  ⇒ make_pipe(outer_d, inner_d, length).
 - "stepped shaft", "two diameters", "three diameters", "shoulder on the shaft"
-  ⇒ use make_stepped_shaft(d1, L1, d2, L2, d3, L3).
+  ⇒ make_stepped_shaft(d1, L1, d2, L2, d3, L3).
 - "keyed shaft", "keyway", "key slot in the shaft"
-  ⇒ use make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth).
+  ⇒ make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth).
 - "flat bar with two holes", "link", "strap with holes at each end"
-  ⇒ use make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset).
+  ⇒ make_flat_bar_2holes(length, width, thickness, hole_d, edge_offset).
 - "drum", "spool", "roller with flanges"
-  ⇒ use make_drum_with_flange(core_d, core_length, flange_d, flange_thickness,
-                               flange_count, bore_d).
+  ⇒ make_drum_with_flange(core_d, core_length, flange_d, flange_thickness,
+                           flange_count, bore_d).
 - "slot", "elongated hole", "long hole" in a plate
-  ⇒ use make_plate_with_slot(L, W, thickness, slot_width, edge_offset).
+  ⇒ make_plate_with_slot(L, W, thickness, slot_width, edge_offset).
 - "pocket", "recess", "shallow cavity" on the top face of a plate
-  ⇒ use make_plate_with_pocket(L, W, thickness,
-                               pocket_length, pocket_width, pocket_depth).
+  ⇒ make_plate_with_pocket(L, W, thickness,
+                           pocket_length, pocket_width, pocket_depth).
 - Cylinder with a through or blind hole along the axis
-  ⇒ use make_cyl_with_hole(...), never plain make_cylinder for that case.
+  ⇒ make_cyl_with_hole(...), never plain make_cylinder for that case.
 - Circular flange with bolt circle / bolt holes
-  ⇒ use make_flange(...), not make_plate_with_hole(...).
+  ⇒ make_flange(...), not make_plate_with_hole(...).
 
 Gears:
 - If the description mentions a worm gear or screw gear,
@@ -113,13 +146,13 @@ Gears:
 - "internal gear" ⇒ make_internal_gear(module, teeth, thickness)
 - "bevel gear" ⇒ make_bevel_gear(module, teeth, height, beta)
 
-General rules:
+General rules when you DO generate code:
 - Assume: 'import FreeCAD, Part' AND 'from cad_primitives import *' are already done.
 - DO NOT write any import or from statements.
 - DO NOT call any Part.* or FreeCAD.* functions (except Part.show(shape)).
-- Always assume millimetres for dimensions when units are not stated.
-- If any parameter is not clearly given, choose a simple numeric default
-  (for example 10 or 5), but DO NOT pass None or leave arguments empty.
+- Assume millimetres when units are not stated.
+- If any numeric value is missing, choose a reasonable simple default
+  (for example 10 or 5); never pass None or omit required arguments.
 - Create exactly ONE assignment:
     shape = <ONE allowed helper call with numeric arguments>
 - Then call exactly:
@@ -129,11 +162,10 @@ General rules:
 
 def _sanitize_code(raw: str) -> str:
     """
-    Find the first call to an allowed helper, even if the model:
-    - omits 'shape ='
-    - nests it inside Part.show(...)
-    Then return:
-        shape = <that_call>
+    Take raw model output containing Python code, strip imports / junk,
+    and normalize into:
+
+        shape = <helper_call(...)>
         Part.show(shape)
     """
     useful = []
@@ -141,7 +173,6 @@ def _sanitize_code(raw: str) -> str:
         s = line.strip()
         if not s:
             continue
-        # drop imports, from, and code fences
         if s.startswith("import ") or s.startswith("from "):
             continue
         if s.startswith("```"):
@@ -150,7 +181,6 @@ def _sanitize_code(raw: str) -> str:
     text = " ".join(useful)
 
     call = None
-    # find all function calls like name(...)
     for m in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()]*)\)", text):
         name = m.group(1).strip()
         args = m.group(2).strip()
@@ -172,10 +202,29 @@ def generate_cad_code(description: str) -> str:
         ],
     )
     raw = resp["message"]["content"].strip()
+
+    # Special markers for ambiguous / unsupported prompts
+    if raw.startswith("ASK_GEAR_TYPE:"):
+        msg = raw.split(":", 1)[1].strip() or (
+            "Part not well defined. Please specify the gear type "
+            "(spur, helical, bevel, worm, internal)."
+        )
+        raise AmbiguousPartError(msg)
+
+    if raw.startswith("UNSUPPORTED_PART:"):
+        msg = raw.split(":", 1)[1].strip() or (
+            "Object not found in library; can't generate this figure for now."
+        )
+        raise UnsupportedPartError(msg)
+
     return _sanitize_code(raw)
 
 if __name__ == "__main__":
     desc = input("Describe a part: ")
-    code = generate_cad_code(desc)
-    print("\n--- GENERATED CODE ---")
-    print(code)
+    try:
+        code = generate_cad_code(desc)
+        print("\n--- GENERATED CODE ---")
+        print(code)
+    except (AmbiguousPartError, UnsupportedPartError) as e:
+        print("\n--- MESSAGE ---")
+        print(str(e))
