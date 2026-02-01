@@ -1,10 +1,8 @@
-import sys, os, webbrowser, logging, traceback, textwrap, subprocess
+import sys, os, webbrowser, logging, traceback, subprocess
 from pathlib import Path
 
 # ---------- Paths & logging setup ----------
 
-# When running from PyInstaller, use the folder that contains the .exe.
-# When running from source, use the folder that contains app_gui.py.
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).parent
 else:
@@ -14,16 +12,9 @@ else:
 def setup_freecad_env():
     """
     Make sure the embedded Python process can find the FreeCAD DLLs and modules.
-
-    We:
-      - look for a FreeCAD installation (env var or common paths),
-      - add its bin/ and lib/ to the DLL search path,
-      - insert lib/ at the *front* of sys.path so we prefer the system FreeCAD
-        over any partially-bundled copy inside _internal.
     """
-    candidates: list[Path] = []    
+    candidates: list[Path] = []
 
-    # If user has a custom FreeCAD path in env vars, prefer that
     env_home = (
         os.environ.get("FREECAD_HOME")
         or os.environ.get("FREECAD_DIR")
@@ -32,7 +23,6 @@ def setup_freecad_env():
     if env_home:
         candidates.append(Path(env_home))
 
-    # Common Windows install locations (adjust/add as needed)
     candidates.extend([
         Path(r"C:\Program Files\FreeCAD 1.0"),
         Path(r"C:\Program Files\FreeCAD 0.21.2"),
@@ -48,36 +38,27 @@ def setup_freecad_env():
         lib_dir = base / "lib"
 
         for d in (bin_dir, lib_dir):
-            if d.exists():
-                # Add to DLL search path (for native .dll dependencies)
-                if hasattr(os, "add_dll_directory"):
-                    try:
-                        os.add_dll_directory(str(d))
-                    except Exception:
-                        # ignore if this fails; PATH may still work
-                        pass
+            if d.exists() and hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(str(d))
+                except Exception:
+                    pass
 
-        # Make sure Python searches lib/ *before* PyInstaller's _internal
         if lib_dir.exists():
             lib_str = str(lib_dir)
             if lib_str not in sys.path:
                 sys.path.insert(0, lib_str)
 
-        # We found one working base, no need to try the rest
         break
 
 
-# If running from the PyInstaller build, also add the _internal folder
-# (where PyInstaller puts most .pyd/.dll files) to the DLL search path.
 if getattr(sys, "frozen", False):
     internal_dir = BASE_DIR / "_internal"
-    if internal_dir.exists():
+    if internal_dir.exists() and hasattr(os, "add_dll_directory"):
         try:
             os.add_dll_directory(str(internal_dir))
         except Exception:
             pass
-
-# NOTE: we call setup_freecad_env() *after* importing PyQt6 to avoid DLL conflicts.
 
 MODELS_DIR = BASE_DIR / "generated_models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -108,10 +89,8 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QDialog, QFrame,
 )
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtProperty
-from PyQt6.QtGui import QPixmap, QColor, QPalette
+from PyQt6.QtGui import QPixmap
 
-# Now that PyQt is imported and its Qt DLLs are loaded, we can safely
-# adjust the DLL search paths for FreeCAD.
 setup_freecad_env()
 
 # Try to import FreeCAD; if not available, keep running but disable generation features
@@ -176,14 +155,12 @@ class ToastWidget(QWidget):
         super().__init__(parent)
         self._opacity = 1.0
 
-        # Transparent widget; we draw only the inner frame
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         outer_layout = QHBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Inner frame: the visible rectangle
         self.frame = QFrame(self)
         self.frame.setObjectName("toastFrame")
         frame_layout = QHBoxLayout(self.frame)
@@ -332,7 +309,6 @@ class TextToModelTab(QWidget):
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         l_layout.addWidget(self.hint_label)
 
-        # Help link: how to write good descriptions
         tips_row = QHBoxLayout()
         self.tips_btn = QPushButton("How to describe your part")
         self.tips_btn.setFlat(True)
@@ -413,7 +389,7 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
-        # --- gear ambiguity check BEFORE calling the AI --------------------
+        # --- Gear ambiguity check BEFORE calling the AI --------------------
         desc_norm = desc.lower()
         if "gear" in desc_norm:
             has_type = any(
@@ -551,26 +527,14 @@ class TextToModelTab(QWidget):
     def _generate_via_freecadcmd(self, code: str):
         """
         Run the CAD code via external freecadcmd (used in the frozen .exe).
-
-        We write a full Python script (imports + helper Part.show + your code +
-        save) to _temp/gen_code.py and call:
-
-            freecadcmd.exe gen_code.py
-
-        For simplicity on this machine, we point FreeCAD's Python to the
-        original project folder C:\\AI_CAD_Assistant so it can import
-        cad_primitives.py from there.
         """
-        # Where to store the final model
         idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
         out_path = MODELS_DIR / f"model_{idx}.FCStd"
 
-        # Temp script path
         temp_dir = MODELS_DIR / "_temp"
         temp_dir.mkdir(exist_ok=True)
         script_path = temp_dir / "gen_code.py"
 
-        # Absolute path to the source project (where cad_primitives.py lives)
         src_dir_literal = r"C:\AI_CAD_Assistant"
         out_literal = repr(str(out_path))
 
@@ -613,8 +577,8 @@ from cad_primitives import (
 )
 
 doc = FreeCAD.newDocument("AIModel")
-                                
-class _SafePart:            
+
+class _SafePart:
     @staticmethod
     def show(shape):
         obj = doc.addObject("Part::Feature", "AI_Shape")
