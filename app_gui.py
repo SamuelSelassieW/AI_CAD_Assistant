@@ -10,6 +10,9 @@ else:
 
 
 def setup_freecad_env():
+    """
+    Make sure the embedded Python process can find the FreeCAD DLLs and modules.
+    """
     candidates: list[Path] = []
 
     env_home = (
@@ -141,7 +144,7 @@ from drawing_generator_dims import generate_drawing_with_dims
 from image_to_cad_run import image_to_cad
 
 
-# ---------- Toast widget ----------
+# ---------- Toast notification widget ----------
 
 class ToastWidget(QWidget):
     def __init__(self, parent: QWidget):
@@ -241,7 +244,6 @@ class TextToModelTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
 
-        # left card
         left = QFrame()
         left.setObjectName("card")
         l_layout = QVBoxLayout(left)
@@ -314,7 +316,6 @@ class TextToModelTab(QWidget):
 
         splitter.addWidget(left)
 
-        # right card
         right = QFrame()
         right.setObjectName("card")
         r_layout = QVBoxLayout(right)
@@ -381,7 +382,7 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
-        # ---- gear ambiguity check BEFORE calling the AI -------------------
+        # --- Gear ambiguity check BEFORE calling the AI --------------------
         desc_norm = desc.lower()
         if "gear" in desc_norm:
             has_type = any(
@@ -456,5 +457,319 @@ class TextToModelTab(QWidget):
         finally:
             self.generate_btn.setEnabled(True)
 
-    # ...  (keep the rest of your file: _generate_in_process, _generate_via_freecadcmd,
-    # ImageToModelTab, ModelToDrawingTab, PromptHelpDialog, AboutDialog, MainWindow, main())
+    def _generate_in_process(self, code: str):
+        doc = FreeCAD.newDocument("AIModel")
+
+        class _SafePart:
+            @staticmethod
+            def show(shape):
+                doc_inner = FreeCAD.ActiveDocument
+                if doc_inner is None:
+                    doc_inner = FreeCAD.newDocument("AIModel")
+                obj = doc_inner.addObject("Part::Feature", "AI_Shape")
+                obj.Shape = shape
+
+        exec_globals = {
+            "__builtins__": {},
+            "FreeCAD": FreeCAD,
+            "Part": _SafePart,
+            "make_box": make_box,
+            "make_cylinder": make_cylinder,
+            "make_tri_prism": make_tri_prism,
+            "make_plate_with_hole": make_plate_with_hole,
+            "make_hex_prism": make_hex_prism,
+            "make_hex_nut": make_hex_nut,
+            "make_hex_bolt": make_hex_bolt,
+            "make_screw_blank": make_screw_blank,
+            "make_slotted_screw": make_slotted_screw,
+            "make_cross_screw": make_cross_screw,
+            "make_socket_head_screw": make_socket_head_screw,
+            "make_fasteners_hex_bolt": make_fasteners_hex_bolt,
+            "make_cyl_with_hole": make_cyl_with_hole,
+            "make_flange": make_flange,
+            "make_spur_gear": make_spur_gear,
+            "make_helical_gear": make_helical_gear,
+            "make_internal_gear": make_internal_gear,
+            "make_bevel_gear": make_bevel_gear,
+            "make_worm_gear": make_worm_gear,
+            "make_rect_tube": make_rect_tube,
+            "make_pipe": make_pipe,
+            "make_stepped_shaft": make_stepped_shaft,
+            "make_flat_bar_2holes": make_flat_bar_2holes,
+            "make_drum_with_flange": make_drum_with_flange,
+            "make_shaft_with_keyway": make_shaft_with_keyway,
+            "make_plate_with_slot": make_plate_with_slot,
+            "make_plate_with_pocket": make_plate_with_pocket,
+        }
+
+        exec(code, exec_globals, exec_globals)
+        doc.recompute()
+
+        idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
+        file_path = MODELS_DIR / f"model_{idx}.FCStd"
+        doc.saveAs(str(file_path))
+
+        self.last_model_path = file_path
+        self.model_label.setText("Model: created")
+        self.path_label.setText(f"Saved to: {file_path}")
+        self.open_btn.setEnabled(True)
+        self.export_btn.setEnabled(True)
+        self.main.statusBar().showMessage(f"Saved model to: {file_path}", 5000)
+
+    def _generate_via_freecadcmd(self, code: str):
+        idx = len(list(MODELS_DIR.glob("model_*.FCStd"))) + 1
+        out_path = MODELS_DIR / f"model_{idx}.FCStd"
+
+        temp_dir = MODELS_DIR / "_temp"
+        temp_dir.mkdir(exist_ok=True)
+        script_path = temp_dir / "gen_code.py"
+
+        src_dir_literal = r"C:\AI_CAD_Assistant"
+        out_literal = repr(str(out_path))
+
+        header = f"""import sys
+from pathlib import Path
+import FreeCAD, Part
+
+SOURCE_DIR = Path(r\"\"\"{src_dir_literal}\"\"\")
+if str(SOURCE_DIR) not in sys.path:
+    sys.path.insert(0, str(SOURCE_DIR))
+
+from cad_primitives import (
+    make_box,
+    make_cylinder,
+    make_tri_prism,
+    make_plate_with_hole,
+    make_hex_prism,
+    make_hex_nut,
+    make_hex_bolt,
+    make_screw_blank,
+    make_slotted_screw,
+    make_cross_screw,
+    make_socket_head_screw,
+    make_fasteners_hex_bolt,
+    make_cyl_with_hole,
+    make_flange,
+    make_spur_gear,
+    make_helical_gear,
+    make_internal_gear,
+    make_bevel_gear,
+    make_worm_gear,
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
+)
+
+doc = FreeCAD.newDocument("AIModel")
+
+class _SafePart:
+    @staticmethod
+    def show(shape):
+        obj = doc.addObject("Part::Feature", "AI_Shape")
+        obj.Shape = shape
+
+Part = _SafePart
+"""
+
+        footer = f"""
+
+doc.recompute()
+doc.saveAs({out_literal})
+"""
+
+        script_text = header + "\n" + code + "\n" + footer
+        script_path.write_text(script_text, encoding="utf-8")
+
+        cmd = [FREECADCMD, str(script_path)]
+        logger.info("Running freecadcmd for Text → Model: %s", " ".join(cmd))
+
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+        if result.returncode != 0 or not out_path.exists():
+            msg = (
+                "freecadcmd failed while generating the model.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Exit code: {result.returncode}\n\n"
+                f"STDOUT:\n{result.stdout}\n\n"
+                f"STDERR:\n{result.stderr}"
+            )
+            raise RuntimeError(msg)
+
+        self.last_model_path = out_path
+        self.model_label.setText("Model: created")
+        self.path_label.setText(f"Saved to: {out_path}")
+        self.open_btn.setEnabled(True)
+        self.export_btn.setEnabled(True)
+        self.main.statusBar().showMessage(f"Saved model to: {out_path}", 5000)
+
+    def open_in_freecad(self):
+        if self.last_model_path and self.last_model_path.exists():
+            logger.info("Opening model in FreeCAD: %s", self.last_model_path)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Opening in FreeCAD, please wait...", kind="success")
+            os.startfile(str(self.last_model_path))
+
+    def export_step(self):
+        if not self.main.freecad_available:
+            QMessageBox.warning(
+                self,
+                "FreeCAD not available",
+                "STEP export requires FreeCAD. Install FreeCAD and restart the app.",
+            )
+            return
+
+        state = self.main.lic_state
+        if not can_use_pro_feature(state):
+            QMessageBox.information(
+                self,
+                "Trial limit reached",
+                "You have used your 3 free advanced exports.\n"
+                "Please upgrade or buy more credits to continue.",
+            )
+            return
+
+        if not self.last_model_path or not self.last_model_path.exists():
+            QMessageBox.warning(self, "Export STEP", "No model available to export.")
+            return
+
+        try:
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Exporting STEP, please wait...", kind="success")
+
+            consume_pro_credit(state)
+            step_path = self.last_model_path.with_suffix(".step")
+            logger.info("Exporting STEP: %s", step_path)
+
+            doc = FreeCAD.open(str(self.last_model_path))
+            Part.export(doc.Objects, str(step_path))
+            FreeCAD.closeDocument(doc.Name)
+            os.startfile(str(step_path))
+            self.main.statusBar().showMessage(f"Exported STEP to: {step_path}", 5000)
+
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("STEP exported successfully!", kind="success")
+        except Exception as e:
+            logger.exception("Error exporting STEP.")
+            QMessageBox.critical(self, "Export STEP failed", str(e))
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message("Error exporting STEP", kind="error")
+
+
+# ImageToModelTab, ModelToDrawingTab, PromptHelpDialog, AboutDialog
+# (you can keep the versions you already have; no gear logic there)
+
+# ---------- Main window ----------
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AI CAD Assistant")
+        self.resize(1100, 650)
+
+        self.lic_state = load_state()
+        self.is_pro = is_pro(self.lic_state)
+
+        self.freecad_available = FREECAD_AVAILABLE
+        self.freecad_error = FREECAD_ERROR
+
+        logger.info(
+            "Application started. FreeCAD available: %s. Error: %s",
+            self.freecad_available,
+            self.freecad_error,
+        )
+
+        tabs = QTabWidget()
+        self.text_tab = TextToModelTab(self)
+        self.image_tab = ImageToModelTab(self)
+        self.drawing_tab = ModelToDrawingTab(self)
+
+        tabs.addTab(self.text_tab, "Text → Model")
+        tabs.addTab(self.image_tab, "Image → Model")
+        tabs.addTab(self.drawing_tab, "Model → Drawing")
+        self.setCentralWidget(tabs)
+
+        status = QStatusBar()
+        self.setStatusBar(status)
+        status.showMessage("Ready.")
+
+        if not self.freecad_available:
+            status.showMessage(
+                "FreeCAD not found. Model and drawing generation are disabled until you install it.",
+                10000,
+            )
+
+        about_btn = QPushButton("About")
+        about_btn.setFlat(True)
+        about_btn.clicked.connect(self.show_about_dialog)
+        status.addPermanentWidget(about_btn)
+
+        download_btn = QPushButton("Download FreeCAD")
+        download_btn.setFlat(True)
+        download_btn.clicked.connect(self.open_freecad_download)
+        status.addPermanentWidget(download_btn)
+
+        self.toast = ToastWidget(self)
+        self.toast.hide()
+
+        if not self.freecad_available:
+            self.toast.show_message(
+                "FreeCAD is not installed or could not be imported. "
+                "Install FreeCAD, then restart the AI CAD Assistant.",
+                kind="error",
+                duration_ms=8000,
+            )
+
+    def show_about_dialog(self):
+        dlg = AboutDialog(self)
+        dlg.exec()
+
+    def open_freecad_download(self):
+        url = "https://www.freecad.org/downloads.php"
+        logger.info("Opening FreeCAD download page: %s", url)
+        if hasattr(self, "toast"):
+            self.toast.show_message(
+                "Opening FreeCAD download page...", kind="success"
+            )
+        webbrowser.open(url)
+
+
+def main():
+    logger.info("Launching Qt application.")
+    app = QApplication(sys.argv)
+
+    candidates = [
+        BASE_DIR / "style.qss",
+        BASE_DIR / "_internal" / "style.qss",
+    ]
+
+    style_path = None
+    for p in candidates:
+        logger.info("Checking style at %s (exists=%s)", p, p.exists())
+        if p.exists():
+            style_path = p
+            break
+
+    if style_path:
+        try:
+            with open(style_path, "r", encoding="utf-8") as f:
+                app.setStyleSheet(f.read())
+            logger.info("Loaded style.qss from %s", style_path)
+        except Exception:
+            logger.exception("Failed to load style.qss from %s", style_path)
+    else:
+        logger.warning("style.qss not found; using default Qt theme.")
+
+    win = MainWindow()
+    win.show()
+    exit_code = app.exec()
+    logger.info("Qt application exited with code %s.", exit_code)
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
