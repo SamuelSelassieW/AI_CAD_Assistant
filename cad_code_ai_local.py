@@ -35,7 +35,7 @@ ALLOWED_HELPERS = [
 
 
 class AmbiguousPartError(Exception):
-    """Prompt mentions a supported class (e.g. gear) but is not specific enough."""
+    """Prompt mentions a supported class but is not specific enough."""
     pass
 
 
@@ -53,32 +53,31 @@ Ignore grammar and casing; focus on:
 - the part type (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, etc.)
 - all numeric dimensions.
 
-VERY IMPORTANT – BEFORE writing code:
+VERY IMPORTANT – CLASSIFY BEFORE WRITING CODE:
 
-1) If the prompt is clearly about a gear but the type is not specified
-   (no words spur / helical / bevel / internal / worm / screw gear),
-   then DO NOT write any Python code.
+1) If the prompt is clearly about a part that fits one of the allowed helpers,
+   but is MISSING critical details (for example gear type, key dimensions,
+   number of holes, etc.), DO NOT write any Python code.
    Instead, output exactly one line:
 
-   ASK_GEAR_TYPE: <very short helpful message to the user>
+   ASK_CLARIFY: <very short helpful message to the user>
 
-   Example of such a message:
-   ASK_GEAR_TYPE: Part not well defined. Please specify the gear type \
+   Examples:
+   ASK_CLARIFY: Part not well defined. Please specify the gear type \
 (spur, helical, bevel, worm, internal). Example: "spur gear module 2 \
 with 20 teeth and 10mm width".
+
+   ASK_CLARIFY: Part not well defined. Do you mean a rectangular plate, \
+a tube, or a shaft? Please describe one with main dimensions.
 
 2) If the prompt cannot reasonably be mapped to ANY of the allowed helpers
    (object not in our library), DO NOT write any Python code.
    Instead, output exactly one line:
 
-   UNSUPPORTED_PART: <very short helpful message to the user>
+   UNSUPPORTED_PART: Object not found in library; can't generate this figure for now.
 
-   Example:
-   UNSUPPORTED_PART: Object not found in library; can't generate this \
-figure for now.
-
-Only if you CAN choose an appropriate helper function, then you generate code
-as described below.
+Only if you CAN choose an appropriate helper function and have enough
+information, then you generate code as described below.
 
 Allowed helper calls (already imported for you):
 - make_box(L, W, H)
@@ -150,7 +149,7 @@ General rules when you DO generate code:
 - Assume: 'import FreeCAD, Part' AND 'from cad_primitives import *' are already done.
 - DO NOT write any import or from statements.
 - DO NOT call any Part.* or FreeCAD.* functions (except Part.show(shape)).
-- Assume millimetres when units are not stated.
+- Always assume millimetres for dimensions when units are not stated.
 - If any numeric value is missing, choose a reasonable simple default
   (for example 10 or 5); never pass None or omit required arguments.
 - Create exactly ONE assignment:
@@ -162,10 +161,11 @@ General rules when you DO generate code:
 
 def _sanitize_code(raw: str) -> str:
     """
-    Take raw model output containing Python code, strip imports / junk,
-    and normalize into:
-
-        shape = <helper_call(...)>
+    Find the first call to an allowed helper, even if the model:
+    - omits 'shape ='
+    - nests it inside Part.show(...)
+    Then return:
+        shape = <that_call>
         Part.show(shape)
     """
     useful = []
@@ -181,6 +181,7 @@ def _sanitize_code(raw: str) -> str:
     text = " ".join(useful)
 
     call = None
+    # find all function calls like name(...)
     for m in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()]*)\)", text):
         name = m.group(1).strip()
         args = m.group(2).strip()
@@ -194,22 +195,6 @@ def _sanitize_code(raw: str) -> str:
     return f"shape = {call}\nPart.show(shape)"
 
 def generate_cad_code(description: str) -> str:
-    desc_norm = description.lower()
-
-    # Simple, reliable rule: gear mentioned, but no type specified
-    if "gear" in desc_norm:
-        has_type = any(
-            w in desc_norm
-            for w in ["spur", "helical", "worm", "screw gear", "bevel", "internal"]
-        )
-        if not has_type:
-            msg = (
-                "Part not well defined. Please specify the gear type "
-                "(spur, helical, bevel, worm, internal).\n"
-                'Example: "spur gear module 2 with 20 teeth and 10mm width".'
-            )
-            raise AmbiguousPartError(msg)
-
     resp = ollama.chat(
         model="llama3.2:3b",
         messages=[
@@ -219,10 +204,10 @@ def generate_cad_code(description: str) -> str:
     )
     raw = resp["message"]["content"].strip()
 
-    if raw.startswith("ASK_GEAR_TYPE:"):
+    # Special markers for ambiguous / unsupported prompts
+    if raw.startswith("ASK_CLARIFY:") or raw.startswith("ASK_GEAR_TYPE:"):
         msg = raw.split(":", 1)[1].strip() or (
-            "Part not well defined. Please specify the gear type "
-            "(spur, helical, bevel, worm, internal)."
+            "Part not well defined. Please refine your description."
         )
         raise AmbiguousPartError(msg)
 
