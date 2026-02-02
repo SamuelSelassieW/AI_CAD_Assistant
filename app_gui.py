@@ -148,6 +148,15 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    # new helpers
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
     FREECADCMD,      # from cad_primitives
 )
 from drawing_generator_dims import generate_drawing_with_dims
@@ -276,7 +285,7 @@ class TextToModelTab(QWidget):
 
         self.prompt_edit = QPlainTextEdit()
         self.prompt_edit.setPlaceholderText(
-            "Example: an M8 hex head bolt 40mm long using fasteners..."
+            "Example: a rectangular tube frame member, or a shaft with keyway..."
         )
         self.prompt_edit.setMinimumHeight(160)
         l_layout.addWidget(self.prompt_edit)
@@ -289,11 +298,11 @@ class TextToModelTab(QWidget):
         self.example_combo = QComboBox()
         self.example_combo.addItems([
             "an M8 hex head bolt 40mm long using fasteners",
-            "an L-shaped bracket with legs 40mm and 30mm, width 10mm and thickness 5mm",
+            "a rectangular tube 500mm long, 40mm wide, 30mm high with 3mm wall",
+            "a shaft 25mm diameter and 200mm long with a 6mm wide, 3mm deep keyway",
             "a circular flange outer 80mm, inner 40mm, 8mm thick with 6 bolt holes "
             "of 8mm on a 60mm bolt circle",
-            "a cylinder of base radius 30mm and height 50mm with a central hole "
-            "of radius 15mm and depth 30mm",
+            "a plate 100 by 40 by 8mm with a central slot 10mm wide leaving 15mm at each end",
         ])
         ex_row.addWidget(self.example_combo)
 
@@ -471,6 +480,14 @@ class TextToModelTab(QWidget):
             "make_internal_gear": make_internal_gear,
             "make_bevel_gear": make_bevel_gear,
             "make_worm_gear": make_worm_gear,
+            "make_rect_tube": make_rect_tube,
+            "make_pipe": make_pipe,
+            "make_stepped_shaft": make_stepped_shaft,
+            "make_flat_bar_2holes": make_flat_bar_2holes,
+            "make_drum_with_flange": make_drum_with_flange,
+            "make_shaft_with_keyway": make_shaft_with_keyway,
+            "make_plate_with_slot": make_plate_with_slot,
+            "make_plate_with_pocket": make_plate_with_pocket,
         }
 
         exec(code, exec_globals, exec_globals)
@@ -541,6 +558,14 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
 )
 
 doc = FreeCAD.newDocument("AIModel")
@@ -934,26 +959,26 @@ class PromptHelpDialog(QDialog):
         text = """
 <b>Guidelines for good part descriptions</b><br><br>
 1. <b>Start with the base shape</b><br>
-&nbsp;&nbsp;&nbsp;Examples: plate, block, cylinder, flange, bracket, gear, nut, bolt...<br><br>
+&nbsp;&nbsp;&nbsp;Examples: plate, block, cylinder, flange, bracket, gear, nut, bolt,
+&nbsp;&nbsp;&nbsp;rectangular tube, shaft, roller, link, drum...<br><br>
 2. <b>Always give key dimensions in millimetres (mm)</b><br>
 &nbsp;&nbsp;&nbsp;• overall lengths / widths / heights<br>
-&nbsp;&nbsp;&nbsp;• diameters (outer, inner, holes)<br>
+&nbsp;&nbsp;&nbsp;• diameters (outer, inner, holes, shafts)<br>
 &nbsp;&nbsp;&nbsp;• thicknesses and face widths<br><br>
-3. <b>For holes, specify:</b><br>
-&nbsp;&nbsp;&nbsp;• how many (e.g. 4 holes)<br>
-&nbsp;&nbsp;&nbsp;• diameter (e.g. 8mm holes)<br>
-&nbsp;&nbsp;&nbsp;• pattern/location<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– equally spaced on a 60mm bolt circle<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– 2 holes 50mm apart along the length<br><br>
+3. <b>For holes, slots and pockets, specify:</b><br>
+&nbsp;&nbsp;&nbsp;• how many (e.g. 2 holes, one slot)<br>
+&nbsp;&nbsp;&nbsp;• diameter / width / depth<br>
+&nbsp;&nbsp;&nbsp;• pattern/location (e.g. at each end, centred, on a bolt circle)<br><br>
 4. <b>Say where features are located</b><br>
 &nbsp;&nbsp;&nbsp;• centred, at one end, offset 10mm from an edge, etc.<br><br>
 5. <b>Avoid vague words</b> like "small", "large", "thin". Use numbers instead.<br><br>
-6. <b>If you want fillets or chamfers</b>, mention size and where<br>
-&nbsp;&nbsp;&nbsp;• e.g. 2mm fillet on all outer edges of the plate<br><br>
+6. <b>If you want fillets, chamfers or keyways</b>, mention size and where<br>
+&nbsp;&nbsp;&nbsp;• e.g. a 25mm shaft 150mm long with a 6mm wide, 3mm deep keyway<br><br>
 <b>Example prompts</b><br>
 • a rectangular plate 100mm by 60mm, 8mm thick with a central hole of 20mm<br>
-• an L-shaped bracket with legs 40mm and 30mm, width 10mm and thickness 5mm<br>
-• a spur gear module 2 with 20 teeth and 10mm face width<br>
+• a rectangular tube 400mm long, 40mm wide, 30mm high with 3mm wall thickness<br>
+• a shaft 25mm diameter and 200mm long with a 6mm wide, 3mm deep keyway<br>
+• a plate 120 by 40 by 8mm with a 12mm wide slot leaving 20mm material at each end<br>
 • a circular flange outer 80mm, inner 40mm, 8mm thick with 6 bolt holes of 8mm on a 60mm bolt circle<br>
 """
         label = QLabel(text)
