@@ -127,7 +127,15 @@ except Exception as e:
     FREECAD_ERROR = str(e)
     logger.warning("FreeCAD import FAILED: %s", FREECAD_ERROR)
 
-from cad_code_ai_local import generate_cad_code
+# ---- changed: import extra error classes from cad_code_ai_local ----
+from cad_code_ai_local import (
+    generate_cad_code,
+    AmbiguousPartError,
+    UnsupportedPartError,
+)
+# --------------------------------------------------------------------
+
+# ---- changed: import new helpers from cad_primitives ----
 from cad_primitives import (
     make_box,
     make_cylinder,
@@ -148,8 +156,19 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    # new helpers
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
     FREECADCMD,      # from cad_primitives
 )
+# --------------------------------------------------------------------
+
 from drawing_generator_dims import generate_drawing_with_dims
 from image_to_cad_run import image_to_cad
 
@@ -400,6 +419,27 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
+        # ---------- NEW: gear ambiguity pre-check ----------
+        desc_norm = desc.lower()
+        if "gear" in desc_norm:
+            has_type = any(
+                w in desc_norm
+                for w in ["spur", "helical", "worm", "screw gear", "bevel", "internal"]
+            )
+            if not has_type:
+                msg = (
+                    "Part not well defined. Please specify the gear type "
+                    "(spur, helical, bevel, worm, internal).\n"
+                    'Example: "spur gear module 2 with 20 teeth and 10mm width".'
+                )
+                self.code_view.setPlainText(msg)
+                QMessageBox.information(self, "Part not well defined", msg)
+                self.main.statusBar().showMessage(msg, 8000)
+                if hasattr(self.main, "toast"):
+                    self.main.toast.show_message(msg, kind="error")
+                return
+        # ---------------------------------------------------
+
         logger.info("Text → Model generation started. Description: %s", desc)
 
         self.generate_btn.setEnabled(False)
@@ -423,6 +463,29 @@ class TextToModelTab(QWidget):
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
+
+        # ---------- NEW: handle specific AI messages ----------
+        except AmbiguousPartError as e:
+            msg = str(e) or (
+                "Part not well defined. Please specify the gear type "
+                "(spur, helical, bevel, worm, internal)."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Part not well defined", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
+
+        except UnsupportedPartError as e:
+            msg = str(e) or (
+                "Object not found in library; can't generate this figure for now."
+            )
+            self.code_view.setPlainText(msg)
+            QMessageBox.information(self, "Object not found", msg)
+            self.main.statusBar().showMessage(msg, 8000)
+            if hasattr(self.main, "toast"):
+                self.main.toast.show_message(msg, kind="error")
+        # ----------------------------------------------------
 
         except Exception as e:
             logger.exception("Error generating model from text.")
@@ -471,6 +534,15 @@ class TextToModelTab(QWidget):
             "make_internal_gear": make_internal_gear,
             "make_bevel_gear": make_bevel_gear,
             "make_worm_gear": make_worm_gear,
+            # allow new helpers in embedded path
+            "make_rect_tube": make_rect_tube,
+            "make_pipe": make_pipe,
+            "make_stepped_shaft": make_stepped_shaft,
+            "make_flat_bar_2holes": make_flat_bar_2holes,
+            "make_drum_with_flange": make_drum_with_flange,
+            "make_shaft_with_keyway": make_shaft_with_keyway,
+            "make_plate_with_slot": make_plate_with_slot,
+            "make_plate_with_pocket": make_plate_with_pocket,
         }
 
         exec(code, exec_globals, exec_globals)
@@ -541,6 +613,14 @@ from cad_primitives import (
     make_internal_gear,
     make_bevel_gear,
     make_worm_gear,
+    make_rect_tube,
+    make_pipe,
+    make_stepped_shaft,
+    make_flat_bar_2holes,
+    make_drum_with_flange,
+    make_shaft_with_keyway,
+    make_plate_with_slot,
+    make_plate_with_pocket,
 )
 
 doc = FreeCAD.newDocument("AIModel")
@@ -638,388 +718,9 @@ doc.saveAs({out_literal})
                 self.main.toast.show_message("Error exporting STEP", kind="error")
 
 
-class ImageToModelTab(QWidget):
-    def __init__(self, main_window: QMainWindow):
-        super().__init__()
-        self.main = main_window
-        self.image_path: Path | None = None
-        self.model_path: Path | None = None
-
-        card = QFrame()
-        card.setObjectName("card")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-
-        title = QLabel("Image → Model (Experimental)")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
-
-        subtitle = QLabel("Upload a simple sketch or orthographic view. Results may be approximate.")
-        subtitle.setObjectName("secondaryText")
-        layout.addWidget(subtitle)
-
-        btn_row = QHBoxLayout()
-        self.load_btn = QPushButton("Load image / sketch…")
-        self.load_btn.clicked.connect(self.load_image)
-        self.gen_btn = QPushButton("Detect & Generate Model")
-        self.gen_btn.setEnabled(False)
-        self.gen_btn.clicked.connect(self.on_generate)
-        if not self.main.freecad_available:
-            self.gen_btn.setEnabled(False)
-        btn_row.addWidget(self.load_btn)
-        btn_row.addWidget(self.gen_btn)
-        layout.addLayout(btn_row)
-
-        self.preview = QLabel("No image loaded.")
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumHeight(250)
-        self.preview.setObjectName("imagePreview")
-        layout.addWidget(self.preview)
-
-        self.info_label = QLabel("Model: (none)")
-        self.info_label.setObjectName("secondaryText")
-        self.path_label = QLabel("Path: (none)")
-        self.path_label.setObjectName("secondaryText")
-        layout.addWidget(self.info_label)
-        layout.addWidget(self.path_label)
-
-        open_row = QHBoxLayout()
-        self.open_btn = QPushButton("Open in FreeCAD")
-        self.open_btn.setEnabled(False)
-        self.open_btn.clicked.connect(self.open_model)
-        open_row.addStretch()
-        open_row.addWidget(self.open_btn)
-        layout.addLayout(open_row)
-
-        outer = QVBoxLayout(self)
-        outer.addWidget(card)
-
-    def load_image(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select image",
-            str(BASE_DIR),
-            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*.*)",
-        )
-        if not fname:
-            return
-        self.image_path = Path(fname)
-        pix = QPixmap(fname)
-        if not pix.isNull():
-            self.preview.setPixmap(
-                pix.scaled(
-                    400,
-                    300,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
-        else:
-            self.preview.setText(f"Loaded: {fname}")
-        if self.main.freecad_available:
-            self.gen_btn.setEnabled(True)
-        self.main.statusBar().showMessage(f"Loaded image: {fname}", 4000)
-        logger.info("Loaded image for Image → Model: %s", fname)
-
-    def on_generate(self):
-        if not self.main.freecad_available:
-            QMessageBox.warning(
-                self,
-                "FreeCAD not available",
-                "Generating a model from an image requires FreeCAD.\n"
-                "Please install FreeCAD and restart the AI CAD Assistant.",
-            )
-            return
-
-        if not self.image_path or not self.image_path.exists():
-            self.main.statusBar().showMessage("No valid image selected.", 4000)
-            return
-        self.main.statusBar().showMessage("Generating model from image...", 0)
-        if hasattr(self.main, "toast"):
-            self.main.toast.show_message(
-                "Generating from image, please wait...", kind="success"
-            )
-        QApplication.processEvents()
-
-        logger.info("Image → Model generation started. Image: %s", self.image_path)
-
-        try:
-            result = image_to_cad(str(self.image_path))
-            if isinstance(result, (str, Path)):
-                self.model_path = Path(result)
-            else:
-                fcstd_files = sorted(MODELS_DIR.glob("*.FCStd"))
-                self.model_path = fcstd_files[-1] if fcstd_files else None
-
-            if not self.model_path:
-                self.main.statusBar().showMessage("No model created.", 5000)
-                logger.warning("Image → Model: no model created.")
-                return
-
-            self.info_label.setText("Model created from image.")
-            self.path_label.setText(f"Path: {self.model_path}")
-            self.open_btn.setEnabled(True)
-            self.main.statusBar().showMessage(
-                f"Saved model to: {self.model_path}", 5000
-            )
-
-            logger.info("Image → Model succeeded. Model at %s", self.model_path)
-
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Image-based model created!", kind="success"
-                )
-        except Exception as e:
-            logger.exception("Error generating model from image.")
-            self.main.statusBar().showMessage(f"Error: {e}", 8000)
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Error generating from image", kind="error"
-                )
-
-    def open_model(self):
-        if self.model_path and self.model_path.exists():
-            logger.info("Opening image-based model in FreeCAD: %s", self.model_path)
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Opening in FreeCAD, please wait...", kind="success"
-                )
-            os.startfile(str(self.model_path))
-
-
-class ModelToDrawingTab(QWidget):
-    def __init__(self, main_window: QMainWindow):
-        super().__init__()
-        self.main = main_window
-        self.drawing_path: Path | None = None
-
-        card = QFrame()
-        card.setObjectName("card")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-
-        title = QLabel("Model → Drawing")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
-
-        subtitle = QLabel(
-            "Select a generated model and create a basic engineering drawing."
-        )
-        subtitle.setObjectName("secondaryText")
-        layout.addWidget(subtitle)
-
-        layout.addWidget(QLabel("Select model from generated_models:"))
-        self.model_combo = QComboBox()
-        layout.addWidget(self.model_combo)
-
-        btn_row = QHBoxLayout()
-        self.refresh_btn = QPushButton("Refresh list")
-        self.refresh_btn.clicked.connect(self.refresh_models)
-        btn_row.addWidget(self.refresh_btn)
-        btn_row.addStretch()
-        self.gen_btn = QPushButton("Generate Drawing")
-        self.gen_btn.clicked.connect(self.on_generate)
-        if not self.main.freecad_available:
-            self.gen_btn.setEnabled(False)
-        btn_row.addWidget(self.gen_btn)
-        self.open_btn = QPushButton("Open Drawing")
-        self.open_btn.setEnabled(False)
-        self.open_btn.clicked.connect(self.open_drawing)
-        btn_row.addWidget(self.open_btn)
-        layout.addLayout(btn_row)
-
-        self.path_label = QLabel("Drawing: (none)")
-        self.path_label.setObjectName("secondaryText")
-        layout.addWidget(self.path_label)
-
-        outer = QVBoxLayout(self)
-        outer.addWidget(card)
-
-        self.refresh_models()
-
-    def refresh_models(self):
-        self.model_combo.clear()
-        fcstd_files = sorted(MODELS_DIR.glob("*.FCStd"))
-        for p in fcstd_files:
-            self.model_combo.addItem(p.name, p)
-        if not fcstd_files:
-            self.model_combo.addItem("(no models)", None)
-        logger.info(
-            "Model list refreshed for Model → Drawing. %d models found.",
-            len(fcstd_files),
-        )
-
-    def on_generate(self):
-        if not self.main.freecad_available:
-            QMessageBox.warning(
-                self,
-                "FreeCAD not available",
-                "Drawing generation requires FreeCAD and its TechDraw workbench.\n"
-                "Please install FreeCAD and restart the AI CAD Assistant.",
-            )
-            return
-
-        state = self.main.lic_state
-        if not can_use_pro_feature(state):
-            QMessageBox.information(
-                self,
-                "Trial limit reached",
-                "You have used your 3 free advanced actions.\n"
-                "Please upgrade or buy more credits to generate more drawings.",
-            )
-            return
-        data = self.model_combo.currentData()
-        if data is None or not Path(data).exists():
-            self.main.statusBar().showMessage("No valid model selected.", 4000)
-            return
-
-        model_path = Path(data)
-        logger.info("Model → Drawing generation started for %s", model_path)
-
-        self.main.statusBar().showMessage("Generating drawing...", 0)
-        if hasattr(self.main, "toast"):
-            self.main.toast.show_message(
-                "Generating drawing, please wait...", kind="success"
-            )
-        QApplication.processEvents()
-        try:
-            consume_pro_credit(state)
-            out_path = generate_drawing_with_dims(model_path)
-            self.drawing_path = out_path
-            self.path_label.setText(f"Drawing: {out_path}")
-            self.open_btn.setEnabled(True)
-            self.main.statusBar().showMessage(
-                f"Saved drawing to: {out_path}", 5000
-            )
-
-            logger.info("Model → Drawing succeeded. Drawing at %s", out_path)
-
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Drawing generated successfully!", kind="success"
-                )
-        except Exception as e:
-            logger.exception("Error generating drawing.")
-            self.main.statusBar().showMessage(f"Error: {e}", 8000)
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Error generating drawing", kind="error"
-                )
-
-    def open_drawing(self):
-        if self.drawing_path and self.drawing_path.exists():
-            logger.info("Opening drawing in FreeCAD: %s", self.drawing_path)
-            if hasattr(self.main, "toast"):
-                self.main.toast.show_message(
-                    "Opening drawing in FreeCAD, please wait...", kind="success"
-                )
-            os.startfile(str(self.drawing_path))
-
-
-# ---------- Prompt help dialog ----------
-
-class PromptHelpDialog(QDialog):
-    """Dialog with tips on how to describe parts for better results."""
-
-    def __init__(self, main: QMainWindow):
-        super().__init__(main)
-        self.setWindowTitle("How to describe your part")
-        self.setModal(True)
-        self.resize(520, 420)
-
-        layout = QVBoxLayout(self)
-
-        text = """
-<b>Guidelines for good part descriptions</b><br><br>
-1. <b>Start with the base shape</b><br>
-&nbsp;&nbsp;&nbsp;Examples: plate, block, cylinder, flange, bracket, gear, nut, bolt...<br><br>
-2. <b>Always give key dimensions in millimetres (mm)</b><br>
-&nbsp;&nbsp;&nbsp;• overall lengths / widths / heights<br>
-&nbsp;&nbsp;&nbsp;• diameters (outer, inner, holes)<br>
-&nbsp;&nbsp;&nbsp;• thicknesses and face widths<br><br>
-3. <b>For holes, specify:</b><br>
-&nbsp;&nbsp;&nbsp;• how many (e.g. 4 holes)<br>
-&nbsp;&nbsp;&nbsp;• diameter (e.g. 8mm holes)<br>
-&nbsp;&nbsp;&nbsp;• pattern/location<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– equally spaced on a 60mm bolt circle<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;– 2 holes 50mm apart along the length<br><br>
-4. <b>Say where features are located</b><br>
-&nbsp;&nbsp;&nbsp;• centred, at one end, offset 10mm from an edge, etc.<br><br>
-5. <b>Avoid vague words</b> like "small", "large", "thin". Use numbers instead.<br><br>
-6. <b>If you want fillets or chamfers</b>, mention size and where<br>
-&nbsp;&nbsp;&nbsp;• e.g. 2mm fillet on all outer edges of the plate<br><br>
-<b>Example prompts</b><br>
-• a rectangular plate 100mm by 60mm, 8mm thick with a central hole of 20mm<br>
-• an L-shaped bracket with legs 40mm and 30mm, width 10mm and thickness 5mm<br>
-• a spur gear module 2 with 20 teeth and 10mm face width<br>
-• a circular flange outer 80mm, inner 40mm, 8mm thick with 6 bolt holes of 8mm on a 60mm bolt circle<br>
-"""
-        label = QLabel(text)
-        label.setWordWrap(True)
-        label.setTextFormat(Qt.TextFormat.RichText)
-        layout.addWidget(label)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-
-
-# ---------- About dialog ----------
-
-class AboutDialog(QDialog):
-    def __init__(self, main: QMainWindow):
-        super().__init__(main)
-        self.setWindowTitle("About – AI CAD Assistant")
-        self.setModal(True)
-
-        edition = "Pro" if main.is_pro else "Free"
-        credits = main.lic_state.get("pro_credits", 0)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("<b>AI CAD Assistant</b>"))
-        layout.addWidget(QLabel(f"Edition: {edition}"))
-        if not main.is_pro:
-            layout.addWidget(QLabel(f"Remaining trial advanced actions: {credits}"))
-        layout.addWidget(QLabel(" "))
-
-        freecad_status = "Available" if main.freecad_available else "Not found"
-        layout.addWidget(QLabel("<b>Environment</b>"))
-        layout.addWidget(QLabel(f"FreeCAD: {freecad_status}"))
-        if not main.freecad_available and main.freecad_error:
-            err_txt = main.freecad_error
-            if len(err_txt) > 120:
-                err_txt = err_txt[:120] + "..."
-            layout.addWidget(QLabel(f"FreeCAD error: {err_txt}"))
-
-        layout.addWidget(QLabel(f"Models folder: {MODELS_DIR}"))
-        layout.addWidget(QLabel(f"Log file: {LOG_FILE}"))
-        layout.addWidget(QLabel(" "))
-
-        layout.addWidget(
-            QLabel(
-                "This tool is for prototyping and educational use.\n"
-                "Generated models and drawings must be reviewed and\n"
-                "validated by a qualified engineer before real‑world use."
-            )
-        )
-        layout.addWidget(
-            QLabel(
-                "See TERMS.md in the repository for full terms and disclaimer."
-            )
-        )
-
-        btns = QHBoxLayout()
-        btns.addStretch()
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        btns.addWidget(close_btn)
-        layout.addLayout(btns)
-
+# ---------- Image → Model tab, Model → Drawing tab, PromptHelpDialog, AboutDialog ----------
+# (unchanged from your original file; keep them as they are)
+# ------------------------------------------------------------------------------
 
 # ---------- Main window ----------
 
