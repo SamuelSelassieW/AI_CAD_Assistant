@@ -170,7 +170,7 @@ from image_to_cad_run import image_to_cad
 # ---------- Toast notification widget ----------
 
 class ToastWidget(QWidget):
-    """Small notification banner that appears at the top and auto-hides."""
+    """Small notification banner that appears and auto-hides."""
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -220,12 +220,21 @@ class ToastWidget(QWidget):
         # red, slightly transparent background
         self.frame.setStyleSheet("""
             QFrame#toastFrame {
-                background-color: rgba(248, 113, 113, 0.18);  /* light red */
+                background-color: rgba(248, 113, 113, 0.18);
                 border: 1px solid #f97373;
                 border-radius: 8px;
             }
         """)
         self.label.setStyleSheet("color: #fee2e2; font-weight: 600;")
+
+    @pyqtProperty(float)
+    def opacity(self):
+        return self._opacity
+
+    @opacity.setter
+    def opacity(self, value: float):
+        self._opacity = value
+        self.setWindowOpacity(value)
 
     def show_message(self, text: str, kind: str = "success",
                      duration_ms: int = 3000, center: bool = False):
@@ -432,10 +441,11 @@ class TextToModelTab(QWidget):
                     'Example: "spur gear module 2 with 20 teeth and 10mm width".'
                 )
                 self.code_view.setPlainText(msg)
-                QMessageBox.information(self, "Part not well defined", msg)
-                self.main.statusBar().showMessage(msg, 8000)
+                self.main.statusBar().showMessage(msg, 9000)
                 if hasattr(self.main, "toast"):
-                    self.main.toast.show_message(msg, kind="error")
+                    self.main.toast.show_message(
+                        msg, kind="error", duration_ms=9000, center=True
+                    )
                 return
         # -------------------------------------------------------------------
 
@@ -451,6 +461,8 @@ class TextToModelTab(QWidget):
             code = generate_cad_code(desc)
             self.code_view.setPlainText(code)
 
+            # In the frozen .exe, use external freecadcmd to avoid embedded
+            # FreeCAD GUI/material issues. In normal Python, use embedded FreeCAD.
             if getattr(sys, "frozen", False):
                 self._generate_via_freecadcmd(code)
             else:
@@ -460,13 +472,13 @@ class TextToModelTab(QWidget):
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
+
         except AmbiguousPartError as e:
             msg = str(e) or (
                 "Part not well defined. Please refine your description."
             )
             self.code_view.setPlainText(msg)
-            # no QMessageBox; use centered red toast
-            self.main.statusBar().showMessage(msg, 8000)
+            self.main.statusBar().showMessage(msg, 9000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message(
                     msg, kind="error", duration_ms=9000, center=True
@@ -477,7 +489,7 @@ class TextToModelTab(QWidget):
                 "Object not found in library; can't generate this figure for now."
             )
             self.code_view.setPlainText(msg)
-            self.main.statusBar().showMessage(msg, 8000)
+            self.main.statusBar().showMessage(msg, 9000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message(
                     msg, kind="error", duration_ms=9000, center=True
@@ -489,7 +501,7 @@ class TextToModelTab(QWidget):
             short_tb = "\n".join(tb.splitlines()[-15:])
             # show short traceback in the right-hand code panel for debugging
             self.code_view.setPlainText(short_tb)
-            self.main.statusBar().showMessage(f"Error: {e}", 8000)
+            self.main.statusBar().showMessage(f"Error: {e}", 9000)
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message(
                     "Unexpected error while generating the model.",
@@ -497,6 +509,8 @@ class TextToModelTab(QWidget):
                     duration_ms=9000,
                     center=True,
                 )
+        finally:
+            self.generate_btn.setEnabled(True)
 
     def _generate_in_process(self, code: str):
         """Run the CAD code using the embedded FreeCAD (Python run only)."""
@@ -717,6 +731,8 @@ doc.saveAs({out_literal})
                 self.main.toast.show_message("Error exporting STEP", kind="error")
 
 
+# ---------- Image → Model tab ----------
+
 class ImageToModelTab(QWidget):
     def __init__(self, main_window: QMainWindow):
         super().__init__()
@@ -866,6 +882,8 @@ class ImageToModelTab(QWidget):
                 )
             os.startfile(str(self.model_path))
 
+
+# ---------- Model → Drawing tab ----------
 
 class ModelToDrawingTab(QWidget):
     def __init__(self, main_window: QMainWindow):
