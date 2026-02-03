@@ -217,25 +217,22 @@ class ToastWidget(QWidget):
         self.label.setStyleSheet("color: #bbf7d0; font-weight: 600;")
 
     def set_error_style(self):
+        # red, slightly transparent background
         self.frame.setStyleSheet("""
             QFrame#toastFrame {
-                background-color: rgba(15, 23, 42, 0.0);
+                background-color: rgba(248, 113, 113, 0.18);  /* light red */
                 border: 1px solid #f97373;
                 border-radius: 8px;
             }
         """)
-        self.label.setStyleSheet("color: #fecaca; font-weight: 600;")
+        self.label.setStyleSheet("color: #fee2e2; font-weight: 600;")
 
-    @pyqtProperty(float)
-    def opacity(self):
-        return self._opacity
-
-    @opacity.setter
-    def opacity(self, value: float):
-        self._opacity = value
-        self.setWindowOpacity(value)
-
-    def show_message(self, text: str, kind: str = "success", duration_ms: int = 3000):
+    def show_message(self, text: str, kind: str = "success",
+                     duration_ms: int = 3000, center: bool = False):
+        """
+        kind: "success" or "error"
+        center: if True, show in the middle of the window; otherwise near the top.
+        """
         if kind == "success":
             self.set_success_style()
         elif kind == "error":
@@ -246,9 +243,17 @@ class ToastWidget(QWidget):
         parent = self.parentWidget()
         if parent:
             pw = parent.width()
+            ph = parent.height()
             self.adjustSize()
             w = self.width()
-            self.move((pw - w) // 2, 10)
+            h = self.height()
+            if center:
+                x = (pw - w) // 2
+                y = (ph - h) // 2
+            else:
+                x = (pw - w) // 2
+                y = 10
+            self.move(x, y)
 
         self.setWindowOpacity(1.0)
         self.show()
@@ -455,37 +460,43 @@ class TextToModelTab(QWidget):
 
             if hasattr(self.main, "toast"):
                 self.main.toast.show_message("Model generated successfully!", kind="success")
-
         except AmbiguousPartError as e:
             msg = str(e) or (
                 "Part not well defined. Please refine your description."
             )
             self.code_view.setPlainText(msg)
-            QMessageBox.information(self, "Part not well defined", msg)
+            # no QMessageBox; use centered red toast
             self.main.statusBar().showMessage(msg, 8000)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message(msg, kind="error")
+                self.main.toast.show_message(
+                    msg, kind="error", duration_ms=9000, center=True
+                )
 
         except UnsupportedPartError as e:
             msg = str(e) or (
                 "Object not found in library; can't generate this figure for now."
             )
             self.code_view.setPlainText(msg)
-            QMessageBox.information(self, "Object not found", msg)
             self.main.statusBar().showMessage(msg, 8000)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message(msg, kind="error")
+                self.main.toast.show_message(
+                    msg, kind="error", duration_ms=9000, center=True
+                )
 
         except Exception as e:
             logger.exception("Error generating model from text.")
             tb = traceback.format_exc()
             short_tb = "\n".join(tb.splitlines()[-15:])
-            QMessageBox.critical(self, "Error generating model", short_tb)
+            # show short traceback in the right-hand code panel for debugging
+            self.code_view.setPlainText(short_tb)
             self.main.statusBar().showMessage(f"Error: {e}", 8000)
             if hasattr(self.main, "toast"):
-                self.main.toast.show_message("Error generating model", kind="error")
-        finally:
-            self.generate_btn.setEnabled(True)
+                self.main.toast.show_message(
+                    "Unexpected error while generating the model.",
+                    kind="error",
+                    duration_ms=9000,
+                    center=True,
+                )
 
     def _generate_in_process(self, code: str):
         """Run the CAD code using the embedded FreeCAD (Python run only)."""
