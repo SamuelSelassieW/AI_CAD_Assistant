@@ -203,8 +203,9 @@ def generate_cad_code(description: str) -> str:
         ],
     )
     raw = resp["message"]["content"].strip()
+    lower = raw.lower()
 
-    # Special markers for ambiguous / unsupported prompts
+    # --- handle explicit markers from the system prompt -------------------
     if raw.startswith("ASK_CLARIFY:") or raw.startswith("ASK_GEAR_TYPE:"):
         msg = raw.split(":", 1)[1].strip() or (
             "Part not well defined. Please refine your description."
@@ -217,6 +218,19 @@ def generate_cad_code(description: str) -> str:
         )
         raise UnsupportedPartError(msg)
 
+    # --- handle other clarification messages the model might use ---------
+    # e.g. "Part_not_well_defined: Do you mean a spur or helical gear? ..."
+    if lower.startswith("part_not_well_defined") or lower.startswith("part not well defined"):
+        msg = raw.split(":", 1)[1].strip() if ":" in raw else raw
+        msg = msg or "Part not well defined. Please refine your description."
+        raise AmbiguousPartError(msg)
+
+    # e.g. "Banana is a free-form curve; it does not fit any standard CAD primitive."
+    if "not fit any standard cad primitive" in lower:
+        raise UnsupportedPartError(raw)
+
+    # ----------------------------------------------------------------------
+    # Otherwise we expect actual Python code using one of the helpers.
     return _sanitize_code(raw)
 
 if __name__ == "__main__":
