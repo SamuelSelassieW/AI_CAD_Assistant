@@ -413,6 +413,27 @@ class TextToModelTab(QWidget):
             self.main.statusBar().showMessage("Please enter a description.", 4000)
             return
 
+        # ---- Gear ambiguity check BEFORE calling the AI -------------------
+        desc_norm = desc.lower()
+        if "gear" in desc_norm:
+            has_type = any(
+                w in desc_norm
+                for w in ["spur", "helical", "worm", "screw gear", "bevel", "internal"]
+            )
+            if not has_type:
+                msg = (
+                    "Part not well defined. Please specify the gear type "
+                    "(spur, helical, bevel, worm, internal).\n"
+                    'Example: "spur gear module 2 with 20 teeth and 10mm width".'
+                )
+                self.code_view.setPlainText(msg)
+                QMessageBox.information(self, "Part not well defined", msg)
+                self.main.statusBar().showMessage(msg, 8000)
+                if hasattr(self.main, "toast"):
+                    self.main.toast.show_message(msg, kind="error")
+                return
+        # -------------------------------------------------------------------
+
         logger.info("Text → Model generation started. Description: %s", desc)
 
         self.generate_btn.setEnabled(False)
@@ -425,8 +446,6 @@ class TextToModelTab(QWidget):
             code = generate_cad_code(desc)
             self.code_view.setPlainText(code)
 
-            # In the frozen .exe, use external freecadcmd to avoid embedded
-            # FreeCAD GUI/material issues. In normal Python, use embedded FreeCAD.
             if getattr(sys, "frozen", False):
                 self._generate_via_freecadcmd(code)
             else:
