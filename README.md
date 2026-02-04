@@ -28,6 +28,7 @@ AI‑powered parametric CAD assistant for FreeCAD + SolidWorks.
 - **Model → Drawing**: creates a TechDraw page (front + iso views, overall dims)
   and saves it.
 
+
 ### Example prompts
 
 - an M8 hex head bolt 40mm long using fasteners
@@ -59,3 +60,19 @@ pip install -r requirements.txt
 # make sure Ollama is running and you have a model, e.g.:
 #   ollama pull llama3.2:3b
 python app_gui.py
+
+## Download & Install (Windows)
+
+1. Go to the [Releases](https://github.com/SamuelSelassieW/AI_CAD_Assistant/releases) page.
+2. Download the latest `AI_CAD_Assistant_win.zip`.
+3. Extract the zip (for example to `C:\AI_CAD_Assistant`).
+4. Make sure you have:
+   - **FreeCAD** installed (v1.0 or ≥ 0.21)
+   - **Ollama** installed and running
+   - At least one model pulled in Ollama, e.g.:
+     ```bash
+     ollama pull llama3.2:3b
+     ```
+5. In the extracted folder, run `AI_CAD_Assistant.exe`.
+
+All processing stays on your machine – no data is sent to external servers.
