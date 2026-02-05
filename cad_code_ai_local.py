@@ -150,9 +150,13 @@ Mapping from descriptions to helpers (when you DO generate code):
                 bore_d, key_width=0.0, key_depth=0.0,
                 hub_length=0.0, hub_d=None)
     Simple single‑groove V‑belt pulley with optional keyway and hub.
-    - "V-belt pulley", "V pulley", "V-groove pulley"
-  ⇒ use make_v_pulley(pitch_d, groove_width, groove_angle_deg,
-                      bore_d, key_width, key_depth, hub_length, hub_d).
+  - "V-belt pulley", "V pulley", "V-groove pulley"
+  ⇒ ALWAYS use make_v_pulley(pitch_d, groove_width, groove_angle_deg,
+                             bore_d, key_width, key_depth, hub_length, hub_d).
+  If some values (like hub diameter or length) are not given, choose simple
+  defaults (for example hub_length=10, hub_d=0.6 * pitch_d) instead of asking
+  the user. NEVER reply with text like "please specify belt width" – you must
+  still call make_v_pulley with numeric arguments.
 
 Gears:
 - If the description mentions a worm gear or screw gear,
@@ -174,6 +178,10 @@ General rules when you DO generate code:
 - Then call exactly:
     Part.show(shape)
 - Output ONLY 1–3 lines of pure Python code, no comments, no text, no blank lines.
+- NEVER answer with plain English such as "V-belt pulley; please specify ..."
+  That is invalid. You must either:
+  • output ASK_CLARIFY: ... / UNSUPPORTED_PART: ... as a single line, or
+  • output Python code that calls one allowed helper.
 """
 
 def _sanitize_code(raw: str) -> str:
