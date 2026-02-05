@@ -31,6 +31,7 @@ ALLOWED_HELPERS = [
     "make_shaft_with_keyway",
     "make_plate_with_slot",
     "make_plate_with_pocket",
+    "make_v_pulley",
 ]
 
 
@@ -145,6 +146,13 @@ Mapping from descriptions to helpers (when you DO generate code):
   treat it like a flange and ALWAYS use
   make_flange(outer_d, inner_d, thickness, bolt_circle_d, bolt_hole_d, bolt_count)
   instead of make_plate_with_hole(...).
+  - make_v_pulley(pitch_d, groove_width, groove_angle_deg,
+                bore_d, key_width=0.0, key_depth=0.0,
+                hub_length=0.0, hub_d=None)
+    Simple single‑groove V‑belt pulley with optional keyway and hub.
+    - "V-belt pulley", "V pulley", "V-groove pulley"
+  ⇒ use make_v_pulley(pitch_d, groove_width, groove_angle_deg,
+                      bore_d, key_width, key_depth, hub_length, hub_d).
 
 Gears:
 - If the description mentions a worm gear or screw gear,
