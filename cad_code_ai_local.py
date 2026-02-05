@@ -136,6 +136,11 @@ Mapping from descriptions to helpers (when you DO generate code):
   ⇒ make_cyl_with_hole(...), never plain make_cylinder for that case.
 - Circular flange with bolt circle / bolt holes
   ⇒ make_flange(...), not make_plate_with_hole(...).
+- For a circular plate / carrier plate with outer diameter, thickness,
+  a central bore AND holes on a bolt circle (pin holes, bolt holes, etc.),
+  treat it like a flange and ALWAYS use
+  make_flange(outer_d, inner_d, thickness, bolt_circle_d, bolt_hole_d, bolt_count)
+  instead of make_plate_with_hole(...).
 
 Gears:
 - If the description mentions a worm gear or screw gear,
