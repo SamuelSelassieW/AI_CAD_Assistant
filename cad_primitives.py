@@ -120,7 +120,7 @@ def make_tri_prism(base, height, thickness):
     return prism
 
 
-def make_plate_with_hole(L, W, thickness, hole_radius):
+def make_plate_with_hole(L, W, thickness, hole_radius, *_, **__):
     plate = Part.makeBox(L, W, thickness)
     if hole_radius is None or hole_radius <= 0:
         return plate
