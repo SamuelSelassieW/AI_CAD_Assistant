@@ -220,28 +220,27 @@ def _sanitize_code(raw: str) -> str:
     return f"shape = {call}\nPart.show(shape)"
 
 def generate_cad_code(description: str) -> str:
+    # --- Manual handler for V-belt pulleys (no AI questions) ---------------
     desc_norm = description.lower()
-
-    # ---------- Hard-coded handler for V-belt pulleys ----------
     if "v-belt pulley" in desc_norm or "v belt pulley" in desc_norm or "v pulley" in desc_norm:
-        # extract all numbers in order (80, 20, 38, 15, 5, 2.5, 10, 12, ...)
+        # Extract all numbers in order
         nums = [float(m.group()) for m in re.finditer(r"\d+(\.\d+)?", description)]
         if len(nums) >= 4:
             pitch_d = nums[0]
             groove_width = nums[1]
             groove_angle = nums[2]
             bore_d = nums[3]
-            key_width = nums[4] if len(nums) >= 5 else 0.0
-            key_depth = nums[5] if len(nums) >= 6 else 0.0
+            key_width  = nums[4] if len(nums) >= 5 else 0.0
+            key_depth  = nums[5] if len(nums) >= 6 else 0.0
             hub_length = nums[6] if len(nums) >= 7 else 10.0
-            hub_d = 0.0  # let make_v_pulley choose default diameter
+            hub_d      = 0.0  # let make_v_pulley choose default hub diameter
             return (
                 f"shape = make_v_pulley({pitch_d}, {groove_width}, {groove_angle}, "
                 f"{bore_d}, {key_width}, {key_depth}, {hub_length}, {hub_d})\n"
                 "Part.show(shape)"
             )
-        # if we can't even get basic numbers, fall through to AI
-    # -----------------------------------------------------------
+        # if not enough numbers, fall through to AI
+    # ----------------------------------------------------------------------
 
     resp = ollama.chat(
         model="llama3.2:3b",
@@ -253,7 +252,6 @@ def generate_cad_code(description: str) -> str:
     raw = resp["message"]["content"].strip()
     lower = raw.lower()
 
-    # explicit markers from SYSTEM_PROMPT
     if raw.startswith("ASK_CLARIFY:") or raw.startswith("ASK_GEAR_TYPE:"):
         msg = raw.split(":", 1)[1].strip() or (
             "Part not well defined. Please refine your description."
@@ -266,7 +264,6 @@ def generate_cad_code(description: str) -> str:
         )
         raise UnsupportedPartError(msg)
 
-    # known text patterns
     if lower.startswith("part_not_well_defined") or lower.startswith("part not well defined"):
         msg = raw.split(":", 1)[1].strip() if ":" in raw else raw
         msg = msg or "Part not well defined. Please refine your description."
@@ -275,13 +272,11 @@ def generate_cad_code(description: str) -> str:
     if "not fit any standard cad primitive" in lower:
         raise UnsupportedPartError(raw)
 
-    # if we see any allowed helper call, sanitize normally
     for m in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", raw):
         name = m.group(1)
         if name in ALLOWED_HELPERS:
             return _sanitize_code(raw)
 
-    # otherwise, plain English answer → treat as ambiguous
     raise AmbiguousPartError(raw)
 if __name__ == "__main__":
     desc = input("Describe a part: ")
