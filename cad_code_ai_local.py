@@ -205,6 +205,32 @@ def _sanitize_code(raw: str) -> str:
 
 
 def generate_cad_code(description: str) -> str:
+    desc_norm = description.lower()
+
+    # ---------- Manual handler for V-belt pulleys (no AI questions) ----------
+    if "v-belt pulley" in desc_norm or "v belt pulley" in desc_norm or "v pulley" in desc_norm:
+        # Extract all numbers in the description, in order
+        nums = [float(m.group()) for m in re.finditer(r"\d+(\.\d+)?", description)]
+        # Expect at least: pitch_d, groove_width, groove_angle, bore_d
+        if len(nums) >= 4:
+            pitch_d      = nums[0]
+            groove_width = nums[1]
+            groove_angle = nums[2]
+            bore_d       = nums[3]
+            key_width    = nums[4] if len(nums) >= 5 else 0.0
+            key_depth    = nums[5] if len(nums) >= 6 else 0.0
+            hub_length   = nums[6] if len(nums) >= 7 else 10.0
+            hub_d        = 0.0  # let make_v_pulley choose default hub diameter
+
+            return (
+                f"shape = make_v_pulley({pitch_d}, {groove_width}, {groove_angle}, "
+                f"{bore_d}, {key_width}, {key_depth}, {hub_length}, {hub_d})\n"
+                "Part.show(shape)"
+            )
+        # If we really don't have enough numbers, fall through to AI below.
+    # -------------------------------------------------------------------------
+
+    # ---------- Normal AI path for all other parts ---------------------------
     resp = ollama.chat(
         model="llama3.2:3b",
         messages=[
