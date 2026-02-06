@@ -31,6 +31,7 @@ ALLOWED_HELPERS = [
     "make_shaft_with_keyway",
     "make_plate_with_slot",
     "make_plate_with_pocket",
+    # V-belt pulley helper
     "make_v_pulley",
 ]
 
@@ -49,36 +50,22 @@ SYSTEM_PROMPT = """
 You generate STRICT Python code to build ONE 3D solid using helper functions
 from cad_primitives, then display it.
 
-User descriptions may be short, ungrammatical, or contain spelling mistakes.
-Ignore grammar and casing; focus on:
-- the part type (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, etc.)
+Your entire reply MUST be one of these:
+
+1) A single line starting with:
+   ASK_CLARIFY: ...
+   or
+   UNSUPPORTED_PART: ...
+
+2) Exactly two lines of Python code:
+   shape = <ONE allowed helper call with numeric arguments>
+   Part.show(shape)
+
+Any other kind of output (comments, English sentences, explanations) is invalid.
+
+User descriptions may be short or ungrammatical. Ignore grammar and casing; focus on:
+- the part type (bolt, tube, shaft, plate, slot, pocket, keyway, drum, gear, flange, V-belt pulley, etc.)
 - all numeric dimensions.
-
-VERY IMPORTANT – CLASSIFY BEFORE WRITING CODE:
-
-1) If the prompt is clearly about a part that fits one of the allowed helpers,
-   but is MISSING critical details (for example gear type, key dimensions,
-   number of holes, etc.), DO NOT write any Python code.
-   Instead, output exactly one line:
-
-   ASK_CLARIFY: <very short helpful message to the user>
-
-   Examples:
-   ASK_CLARIFY: Part not well defined. Please specify the gear type \
-(spur, helical, bevel, worm, internal). Example: "spur gear module 2 \
-with 20 teeth and 10mm width".
-
-   ASK_CLARIFY: Part not well defined. Do you mean a rectangular plate, \
-a tube, or a shaft? Please describe one with main dimensions.
-
-2) If the prompt cannot reasonably be mapped to ANY of the allowed helpers
-   (object not in our library), DO NOT write any Python code.
-   Instead, output exactly one line:
-
-   UNSUPPORTED_PART: Object not found in library; can't generate this figure for now.
-
-Only if you CAN choose an appropriate helper function and have enough
-information, then you generate code as described below.
 
 Allowed helper calls (already imported for you):
 - make_box(L, W, H)
@@ -113,8 +100,11 @@ Allowed helper calls (already imported for you):
 - make_plate_with_slot(L, W, thickness, slot_width, edge_offset)
 - make_plate_with_pocket(L, W, thickness,
                          pocket_length, pocket_width, pocket_depth)
+- make_v_pulley(pitch_d, groove_width, groove_angle_deg,
+                bore_d, key_width=0.0, key_depth=0.0,
+                hub_length=0.0, hub_d=None)
 
-Mapping from descriptions to helpers (when you DO generate code):
+Mapping from descriptions to helpers when you DO generate code:
 - "rectangular tube", "box tube", "hollow section", "frame member"
   ⇒ make_rect_tube(length, width, height, wall_thickness).
 - "pipe", "tube", "roller", "hollow cylinder" or outer + inner diameters
@@ -135,28 +125,18 @@ Mapping from descriptions to helpers (when you DO generate code):
                            pocket_length, pocket_width, pocket_depth).
 - Cylinder with a through or blind hole along the axis
   ⇒ make_cyl_with_hole(...), never plain make_cylinder for that case.
-- Circular flange with bolt circle / bolt holes
-  ⇒ make_flange(...), not make_plate_with_hole(...).
-<<<<<<< HEAD
-- For a circular plate / carrier plate with outer diameter, thickness,
-=======
-  - For a circular plate / carrier plate with outer diameter, thickness,
->>>>>>> 0f78144ca678b047a1896b11a360466c3842176f
-  a central bore AND holes on a bolt circle (pin holes, bolt holes, etc.),
-  treat it like a flange and ALWAYS use
-  make_flange(outer_d, inner_d, thickness, bolt_circle_d, bolt_hole_d, bolt_count)
-  instead of make_plate_with_hole(...).
-  - make_v_pulley(pitch_d, groove_width, groove_angle_deg,
-                bore_d, key_width=0.0, key_depth=0.0,
-                hub_length=0.0, hub_d=None)
-    Simple single‑groove V‑belt pulley with optional keyway and hub.
-  - "V-belt pulley", "V pulley", "V-groove pulley"
+- Circular plate / carrier plate with outer diameter, thickness,
+  central bore, and equally spaced holes on a bolt circle
+  ⇒ treat as a flange and use make_flange(outer_d, inner_d, thickness,
+                                          bolt_circle_d, bolt_hole_d, bolt_count).
+
+- "V-belt pulley", "V belt pulley", "V pulley", "V-groove pulley"
   ⇒ ALWAYS use make_v_pulley(pitch_d, groove_width, groove_angle_deg,
                              bore_d, key_width, key_depth, hub_length, hub_d).
-  If some values (like hub diameter or length) are not given, choose simple
-  defaults (for example hub_length=10, hub_d=0.6 * pitch_d) instead of asking
-  the user. NEVER reply with text like "please specify belt width" – you must
-  still call make_v_pulley with numeric arguments.
+     If some values (like hub diameter or length) are not given, choose simple
+     numeric defaults (e.g. hub_length=10, hub_d=0.6 * pitch_d) instead of
+     asking the user. DO NOT output ASK_CLARIFY for V-belt pulleys and DO NOT
+     reply with English sentences for them.
 
 Gears:
 - If the description mentions a worm gear or screw gear,
@@ -166,31 +146,35 @@ Gears:
 - "internal gear" ⇒ make_internal_gear(module, teeth, thickness)
 - "bevel gear" ⇒ make_bevel_gear(module, teeth, height, beta)
 
+Clarification / unsupported:
+- If you genuinely cannot map the description to any helper or the part is not
+  a reasonable fit (e.g. "banana shape"), output:
+    UNSUPPORTED_PART: <short message>
+- If the description fits a helper but is missing absolutely critical numbers,
+  output:
+    ASK_CLARIFY: <very short helpful message to the user>
+
 General rules when you DO generate code:
 - Assume: 'import FreeCAD, Part' AND 'from cad_primitives import *' are already done.
 - DO NOT write any import or from statements.
 - DO NOT call any Part.* or FreeCAD.* functions (except Part.show(shape)).
-- Always assume millimetres for dimensions when units are not stated.
+- Always assume millimetres when units are not stated.
 - If any numeric value is missing, choose a reasonable simple default
-  (for example 10 or 5); never pass None or omit required arguments.
+  (e.g. 5 or 10); never pass None or omit required arguments.
 - Create exactly ONE assignment:
     shape = <ONE allowed helper call with numeric arguments>
 - Then call exactly:
     Part.show(shape)
-- Output ONLY 1–3 lines of pure Python code, no comments, no text, no blank lines.
-- NEVER answer with plain English such as "V-belt pulley; please specify ..."
-  That is invalid. You must either:
-  • output ASK_CLARIFY: ... / UNSUPPORTED_PART: ... as a single line, or
-  • output Python code that calls one allowed helper.
+- Output ONLY these two lines of Python code, no comments, no text, no blank lines.
 """
+
 
 def _sanitize_code(raw: str) -> str:
     """
-    Find the first call to an allowed helper, even if the model:
-    - omits 'shape ='
-    - nests it inside Part.show(...)
-    Then return:
-        shape = <that_call>
+    Take raw model output containing Python code, strip imports / junk,
+    and normalize into:
+
+        shape = <helper_call(...)>
         Part.show(shape)
     """
     useful = []
@@ -219,29 +203,8 @@ def _sanitize_code(raw: str) -> str:
 
     return f"shape = {call}\nPart.show(shape)"
 
-def generate_cad_code(description: str) -> str:
-    # --- Manual handler for V-belt pulleys (no AI questions) ---------------
-    desc_norm = description.lower()
-    if "v-belt pulley" in desc_norm or "v belt pulley" in desc_norm or "v pulley" in desc_norm:
-        # Extract all numbers in order
-        nums = [float(m.group()) for m in re.finditer(r"\d+(\.\d+)?", description)]
-        if len(nums) >= 4:
-            pitch_d = nums[0]
-            groove_width = nums[1]
-            groove_angle = nums[2]
-            bore_d = nums[3]
-            key_width  = nums[4] if len(nums) >= 5 else 0.0
-            key_depth  = nums[5] if len(nums) >= 6 else 0.0
-            hub_length = nums[6] if len(nums) >= 7 else 10.0
-            hub_d      = 0.0  # let make_v_pulley choose default hub diameter
-            return (
-                f"shape = make_v_pulley({pitch_d}, {groove_width}, {groove_angle}, "
-                f"{bore_d}, {key_width}, {key_depth}, {hub_length}, {hub_d})\n"
-                "Part.show(shape)"
-            )
-        # if not enough numbers, fall through to AI
-    # ----------------------------------------------------------------------
 
+def generate_cad_code(description: str) -> str:
     resp = ollama.chat(
         model="llama3.2:3b",
         messages=[
@@ -252,6 +215,7 @@ def generate_cad_code(description: str) -> str:
     raw = resp["message"]["content"].strip()
     lower = raw.lower()
 
+    # explicit markers for clarification / unsupported
     if raw.startswith("ASK_CLARIFY:") or raw.startswith("ASK_GEAR_TYPE:"):
         msg = raw.split(":", 1)[1].strip() or (
             "Part not well defined. Please refine your description."
@@ -264,6 +228,7 @@ def generate_cad_code(description: str) -> str:
         )
         raise UnsupportedPartError(msg)
 
+    # known textual patterns we may see
     if lower.startswith("part_not_well_defined") or lower.startswith("part not well defined"):
         msg = raw.split(":", 1)[1].strip() if ":" in raw else raw
         msg = msg or "Part not well defined. Please refine your description."
@@ -272,12 +237,17 @@ def generate_cad_code(description: str) -> str:
     if "not fit any standard cad primitive" in lower:
         raise UnsupportedPartError(raw)
 
+    # Look for any allowed helper call; if found, sanitize normally
     for m in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", raw):
         name = m.group(1)
         if name in ALLOWED_HELPERS:
             return _sanitize_code(raw)
 
+    # No helper call at all → AI answered in English / asked a question.
+    # Treat as ambiguous part for the UI to surface via the red toast.
     raise AmbiguousPartError(raw)
+
+
 if __name__ == "__main__":
     desc = input("Describe a part: ")
     try:
