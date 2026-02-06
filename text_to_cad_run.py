@@ -32,6 +32,7 @@ from cad_primitives import (
     make_shaft_with_keyway,
     make_plate_with_slot,
     make_plate_with_pocket,
+    make_v_pulley,
 )
 
 
@@ -83,6 +84,7 @@ def main():
         "make_shaft_with_keyway": make_shaft_with_keyway,
         "make_plate_with_slot": make_plate_with_slot,
         "make_plate_with_pocket": make_plate_with_pocket,
+         "make_v_pulley": make_v_pulley,
     }
 
     exec(code, exec_globals, {})

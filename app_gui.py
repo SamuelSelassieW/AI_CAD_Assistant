@@ -161,6 +161,7 @@ from cad_primitives import (
     make_shaft_with_keyway,
     make_plate_with_slot,
     make_plate_with_pocket,
+    make_v_pulley,
     FREECADCMD,      # from cad_primitives
 )
 from drawing_generator_dims import generate_drawing_with_dims
@@ -556,6 +557,7 @@ class TextToModelTab(QWidget):
             "make_shaft_with_keyway": make_shaft_with_keyway,
             "make_plate_with_slot": make_plate_with_slot,
             "make_plate_with_pocket": make_plate_with_pocket,
+            "make_v_pulley": make_v_pulley,
         }
 
         exec(code, exec_globals, exec_globals)
@@ -634,6 +636,7 @@ from cad_primitives import (
     make_shaft_with_keyway,
     make_plate_with_slot,
     make_plate_with_pocket,
+    make_v_pulley,
 )
 
 doc = FreeCAD.newDocument("AIModel")

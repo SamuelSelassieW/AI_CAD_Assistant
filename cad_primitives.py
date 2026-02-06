@@ -403,6 +403,79 @@ def make_shaft_with_keyway(shaft_diameter, shaft_length, key_width, key_depth):
     return shaft.cut(slot)
 
 
+def make_v_pulley(pitch_d, groove_width, groove_angle_deg,
+                  bore_d, key_width=0.0, key_depth=0.0,
+                  hub_length=0.0, hub_d=None):
+    """
+    Simple single‑groove V‑belt pulley.
+
+    pitch_d          : nominal pitch diameter (we approximate as outer diameter)
+    groove_width     : groove top width (mm)
+    groove_angle_deg : included V angle in degrees (e.g. 38)
+    bore_d           : shaft bore diameter
+    key_width        : keyway width (0 => no keyway)
+    key_depth        : keyway depth
+    hub_length       : axial length of hub beyond the rim (0 => no hub)
+    hub_d            : hub outer diameter (None => 0.6 * pitch_d)
+
+    Geometry is approximate but useful for concept and layout models.
+    """
+    pitch_d = float(pitch_d)
+    groove_width = float(groove_width)
+    groove_angle_deg = float(groove_angle_deg)
+    bore_d = float(bore_d)
+    key_width = float(key_width)
+    key_depth = float(key_depth)
+    hub_length = float(hub_length)
+
+    R = pitch_d / 2.0
+    rim_thickness = groove_width + 4.0  # small margin beyond groove
+
+    # main rim cylinder
+    body = Part.makeCylinder(R, rim_thickness)
+
+    # V‑groove cut: revolve a triangle around Z axis
+    half_w = groove_width / 2.0
+    half_angle = math.radians(groove_angle_deg / 2.0)
+    # approximate depth from top width and angle
+    groove_depth = half_w / math.tan(half_angle)
+    groove_depth = min(groove_depth, R * 0.7)  # don't cut through the hub
+
+    zmid = rim_thickness / 2.0
+
+    p1 = Vector(R, 0, zmid - half_w)
+    p2 = Vector(R - groove_depth, 0, zmid)
+    p3 = Vector(R, 0, zmid + half_w)
+    wire = Part.makePolygon([p1, p2, p3, p1])
+    face = Part.Face(wire)
+    groove = face.revolve(Vector(0, 0, zmid), Vector(0, 0, 1), 360)
+    body = body.cut(groove)
+
+    # Bore through rim + hub
+    rb = bore_d / 2.0
+    bore_len = rim_thickness + max(hub_length, 0.0) + 2.0
+    bore = Part.makeCylinder(rb, bore_len, Vector(0, 0, -1.0))
+    body = body.cut(bore)
+
+    # Hub (optional)
+    if hub_length > 0.0:
+        hub_R = (float(hub_d) / 2.0) if hub_d not in (None, 0, "") else 0.6 * R
+        hub = Part.makeCylinder(hub_R, hub_length, Vector(0, 0, rim_thickness))
+        body = body.fuse(hub)
+
+    # Keyway (optional) – cut like a slot on +Y side
+    if key_width > 0.0 and key_depth > 0.0:
+        slot_len = rim_thickness + hub_length + 2.0
+        slot = Part.makeBox(
+            key_width,
+            key_depth,
+            slot_len,
+            Vector(-key_width / 2.0, rb - key_depth, -1.0),
+        )
+        body = body.cut(slot)
+
+    return body
+
 def make_plate_with_slot(L, W, thickness, slot_width, edge_offset):
     L = float(L)
     W = float(W)
